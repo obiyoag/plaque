@@ -3,18 +3,17 @@ import sys
 import torch
 import logging
 import argparse
-import numpy as np
 from tqdm import tqdm
 import torch.optim as optim
 from torchvision import transforms
 from torch.nn import CrossEntropyLoss
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-from sklearn.metrics import f1_score, accuracy_score
 
 from networks.net_factory import net_factory
-from utils import set_seed, Data_Augmenter, seg_digitize
+from utils import set_seed, Data_Augmenter
 from datasets import Eval_Dataset, Train_Dataset, split_dataset, BalancedSampler
+from learning import train, evaluate
 
 
 def parse_args():
@@ -31,7 +30,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def train(args, train_paths, val_paths):
+def main(args, train_paths, val_paths):
 
     train_dataset = Train_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
@@ -49,91 +48,28 @@ def train(args, train_paths, val_paths):
     best_performance = 0
     epoch = args.iteration // len(train_loader) + 1
     iterator = tqdm(range(epoch), ncols=70)
+
     for epoch_num in iterator:
-        for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
-
-            image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            type_output, stenosis_output = model(image, steps=10, device=args.device)
-
-            type_loss = criterion(type_output, plaque_type)
-            stenosis_loss = criterion(stenosis_output, stenosis)
-            loss = 0.5 * (type_loss + stenosis_loss)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            iter_num = iter_num + 1
-            writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/type_loss', type_loss, iter_num)
-            writer.add_scalar('info/stenosis_loss', stenosis_loss, iter_num)
-            logging.info('iteration %d : loss : %f, type_loss: %f, stenosis_loss: %f' %(iter_num, loss.item(), type_loss.item(), stenosis_loss.item()))
-
-            if iter_num > 0 and iter_num % 500 == 0:
-                model.eval()
-                acc_type_list = []
-                f1_type_list = []
-                acc_stenosis_list = []
-                f1_stenosis_list = []
-                for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
-
-                    length = image.size(2)
-                    plaque_type = plaque_type[0]
-                    stenosis = stenosis[0]
-
-                    type_pred_list = []
-                    stenosis_pred_list = []
-                    type_seg_label = []
-                    stenosis_seg_label = []
-
-                    for i in range(length // 45):
-                        input = image[:, :, i * 45: (i + 1) * 45, :, :].float().to(args.device)
-                        type_seg = plaque_type[i * 45: (i + 1) * 45]
-                        stenosis_seg = stenosis[i * 45: (i + 1) * 45]
-
-                        type_output, stenosis_output = model(input, steps=5, device=args.device)
-                        type_pred_list.append(torch.max(torch.softmax(type_output, dim=1), dim=1)[1].item())
-                        stenosis_pred_list.append(torch.max(torch.softmax(stenosis_output, dim=1), dim=1)[1].item())
-                        type_seg_label.append(seg_digitize(type_seg))
-                        stenosis_seg_label.append(seg_digitize(stenosis_seg))
-                    
-                    acc_type_list.append(accuracy_score(type_seg_label, type_pred_list))
-                    f1_type_list.append(f1_score(type_seg_label, type_pred_list, average="macro"))
-                    acc_stenosis_list.append(accuracy_score(stenosis_seg_label, stenosis_pred_list))
-                    f1_stenosis_list.append(f1_score(stenosis_seg_label, stenosis_pred_list, average="macro"))
-
-                acc_type = np.mean(acc_type_list)
-                f1_type = np.mean(f1_type_list)
-                acc_stenosis = np.mean(acc_stenosis_list)
-                f1_stenosis = np.mean(f1_stenosis_list)
-                performance = (acc_type + acc_stenosis) / 2
-
-                writer.add_scalar('val/acc_type', acc_type, iter_num)
-                writer.add_scalar('val/f1_type', f1_type, iter_num)
-                writer.add_scalar('val/acc_stenosis', acc_stenosis, iter_num)
-                writer.add_scalar('val/f1_stenosis', f1_stenosis, iter_num)
-                logging.info('iteration %d : performance: %f, acc_type: %f, f1_type: %f, acc_stenosis: %f, f1_stenosis: %f' %(iter_num, performance, acc_type, f1_type, acc_stenosis, f1_stenosis))
-                
-                if performance > best_performance:
-                    best_performance = performance
-                    save_mode_path = os.path.join(args.snapshot_path, 'iter_{}_dice_{}.pth'.format(iter_num, round(best_performance, 4)))
-                    save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.model))
-                    torch.save(model.state_dict(), save_mode_path)
-                    torch.save(model.state_dict(), save_best)
-
-                model.train()
-
-            if iter_num % 3000 == 0:
-                save_mode_path = os.path.join(args.snapshot_path, 'iter_' + str(iter_num) + '.pth')
+        # train
+        iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
+        # validation
+        if iter_num > 0 and iter_num % 1 == 0:
+            performance = evaluate(args, model, val_loader, iter_num, writer)
+            if performance > best_performance:
+                best_performance = performance
+                save_mode_path = os.path.join(args.snapshot_path, 'iter_{}_dice_{}.pth'.format(iter_num, round(best_performance, 4)))
+                save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.model))
                 torch.save(model.state_dict(), save_mode_path)
-                logging.info("save model to {}".format(save_mode_path))
+                torch.save(model.state_dict(), save_best)
 
             if iter_num >= args.iteration:
                 break
         if iter_num >= args.iteration:
             iterator.close()
             break
+
     writer.close()
+    logging.info("Best performance: {}".format(best_performance))
     logging.info("Training Finished!")
 
 
@@ -156,4 +92,4 @@ if __name__ == "__main__":
 
     train_paths, val_paths, test_paths = split_dataset(case_list)
 
-    train(args, train_paths, val_paths)
+    main(args, train_paths, val_paths)

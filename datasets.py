@@ -179,10 +179,13 @@ class Train_Dataset(Dataset):
     def _digitize_stenosis(self, stenosis):
         """
         按照segment中最大的狭窄程度，返回一个狭窄程度label
+        0-20没有狭窄，20-50轻度，50-100重度
         """
         result = 0
         max_stenosis = max(stenosis)
-        if 0 < max_stenosis < 50:
+        if 0 <= max_stenosis < 20:
+            result = 0
+        elif 20<= max_stenosis <50:
             result = 1
         elif max_stenosis >= 50:
             result = 2
