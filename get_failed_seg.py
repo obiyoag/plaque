@@ -4,6 +4,7 @@ from collections import deque
 import os
 import json
 import SimpleITK as sitk
+import shutil
 
 
 def validate_frame(frame, threshold=0.05):
@@ -81,17 +82,19 @@ def get_path2label_dict(case_list):
             if os.path.exists(json_path):
                 with open(json_path, 'r') as f:
                     dict = json.load(f)
-#                     if len(dict['plaques']) != 0:
                     path2label_dict[branch_path] = process_label(dict['plaques'])
+            else:
+                shutil.rmtree(branch_path)
 
     return path2label_dict
 
 
 if __name__ == "__main__":
-    path = "/Users/gaoyibo/Datasets/plaque_data_whole"
+    path = "/Users/gaoyibo/Datasets/plaque_data_whole/"
     case_list = sorted(os.listdir(path))
     case_list = [os.path.join(path, case) for case in case_list]
     'total case num: ' + str(len(case_list))
+
     failed_branch_list = []
     total_dict = get_path2label_dict(case_list)
     for id, branch_name in enumerate(total_dict.keys()):

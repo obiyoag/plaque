@@ -19,13 +19,13 @@ from datasets import Eval_Dataset, Train_Dataset, split_dataset, BalancedSampler
 
 def parse_args():
     parser = argparse.ArgumentParser('main')
-    parser.add_argument('--data_path', default='/Users/gaoyibo/Datasets/plaque_data_whole', type=str, help='data path')
+    parser.add_argument('--data_path', default='/Users/gaoyibo/Datasets/plaque_data_whole/', type=str, help='data path')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--arr_columns', default=240, type=int, help='num of cols in balanced matrix')
-    parser.add_argument('--num_samples', default=40, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
+    parser.add_argument('--num_samples', default=80, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="select the model")
     
@@ -53,7 +53,7 @@ def train(args, train_paths, val_paths):
         for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
 
             image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            type_output, stenosis_output = model(image, steps=10)
+            type_output, stenosis_output = model(image, steps=10, device=args.device)
 
             type_loss = criterion(type_output, plaque_type)
             stenosis_loss = criterion(stenosis_output, stenosis)
@@ -76,18 +76,22 @@ def train(args, train_paths, val_paths):
                 acc_stenosis_list = []
                 f1_stenosis_list = []
                 for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
+
                     length = image.size(2)
+                    plaque_type = plaque_type[0]
+                    stenosis = stenosis[0]
+
                     type_pred_list = []
                     stenosis_pred_list = []
                     type_seg_label = []
                     stenosis_seg_label = []
 
                     for i in range(length // 45):
-                        input = image[:, :, i * 45: (i + 1) * 45, :, :].float()
+                        input = image[:, :, i * 45: (i + 1) * 45, :, :].float().to(args.device)
                         type_seg = plaque_type[i * 45: (i + 1) * 45]
                         stenosis_seg = stenosis[i * 45: (i + 1) * 45]
 
-                        type_output, stenosis_output = model(input, steps=5)
+                        type_output, stenosis_output = model(input, steps=5, device=args.device)
                         type_pred_list.append(torch.max(torch.softmax(type_output, dim=1), dim=1)[1].item())
                         stenosis_pred_list.append(torch.max(torch.softmax(stenosis_output, dim=1), dim=1)[1].item())
                         type_seg_label.append(seg_digitize(type_seg))
@@ -124,9 +128,9 @@ def train(args, train_paths, val_paths):
                 torch.save(model.state_dict(), save_mode_path)
                 logging.info("save model to {}".format(save_mode_path))
 
-            if iter_num >= args.iterations:
+            if iter_num >= args.iteration:
                 break
-        if iter_num >= args.iterations:
+        if iter_num >= args.iteration:
             iterator.close()
             break
     writer.close()

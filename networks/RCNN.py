@@ -40,11 +40,11 @@ class RCNN(nn.Module):
         self.type_classifier = nn.Linear(self.hidden_size, 4)
         self.stenosis_classifier = nn.Linear(self.hidden_size, 3)
 
-    def forward(self, x, steps):
+    def forward(self, x, steps, device):
         # steps为滑块个数。训练时为10，验证测试时为5。
         batch_size = x.size(0)
-        rnn_input = torch.zeros(steps, batch_size, self.input_size)
-        h0 = torch.randn(self.layer_num, batch_size, self.hidden_size)
+        rnn_input = torch.zeros(steps, batch_size, self.input_size).to(device)
+        h0 = torch.randn(self.layer_num, batch_size, self.hidden_size).to(device)
         for i in range(steps):
             input = x[:, :, i * self.stride: i * self.stride + self.window_size, :, :]
             rnn_input[i] = self.cnn_extractor(input).view(batch_size, -1)

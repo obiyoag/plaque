@@ -219,6 +219,7 @@ class Eval_Dataset(Dataset):
         mpr_path = os.path.join(path, 'mpr.nii.gz')
         mpr_itk = sitk.ReadImage(mpr_path)
         image = sitk.GetArrayFromImage(mpr_itk)
+        image = self._center_crop(image)
         length = image.shape[0]
         pad_len = ceil(length / self.pred_unit) * self.pred_unit
 
@@ -239,6 +240,13 @@ class Eval_Dataset(Dataset):
             elif item >= 50:
                 result.append(2)
         return result
+    
+    def _center_crop(self, image, crop_size=50):
+        channel, height, width = image.shape
+        x_center = width//2
+        y_center = height//2
+        cropped_image = image[:, y_center - crop_size//2: y_center + crop_size//2, x_center - crop_size//2: x_center + crop_size//2]
+        return cropped_image
 
     def _pad_img_label(self, image, label, pad_len):
         """
@@ -307,7 +315,7 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
 
 
 if __name__ == "__main__":
-    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole'
+    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
@@ -317,21 +325,20 @@ if __name__ == "__main__":
     train_paths, val_paths, test_paths = split_dataset(case_list)
 
     # 调试Train_Dataset
-    train_dataset = Train_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
-    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list)
-    train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
+    # train_dataset = Train_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
+    # balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list)
+    # train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
-    for idx, (image, plaque_type, stenosis) in enumerate(train_loader):
-        print(image.shape)
-        plt.imshow(image[0, 0, 2, :, :], cmap='gray')
-        plt.show()
-        break
+    # for idx, (image, plaque_type, stenosis) in enumerate(train_loader):
+    #     print(image.shape)
+    #     plt.imshow(image[0, 0, 2, :, :], cmap='gray')
+    #     plt.show()
+    #     break
 
     # 调试Eval_Dataset
-    # val_dataset = Eval_Dataset(val_paths)
-    # for i in range(len(val_dataset)):
-    #     image, type, stenosis = val_dataset[i]
-    #     if max(type) != 0:
-    #         print(type)
-    #         print(stenosis)
-    #         break
+    val_dataset = Eval_Dataset(val_paths)
+    for i in range(len(val_dataset)):
+        image, type, stenosis = val_dataset[i]
+        print(image.shape)
+        plt.imshow(image[0, 5, :, :], cmap='gray')
+        plt.show()
