@@ -2,6 +2,7 @@ import torch
 import random
 import numpy as np
 from scipy import ndimage
+from sklearn.metrics import multilabel_confusion_matrix
 
 
 def set_seed(seed):
@@ -53,6 +54,16 @@ class Data_Augmenter(object):
         image = add_gaussian_noise(image, self.prob)
         return image
 
+
+class Center_Crop(object):
+    def __init__(self, crop_size=50):
+        self.crop_size = crop_size
+
+    def __call__(self, image):
+        image = random_crop(image, self.crop_size, 0, 0)
+        return image
+
+
 def seg_digitize(type_seg):
     """
     将一段seg_label转化为一个值
@@ -65,3 +76,21 @@ def seg_digitize(type_seg):
         if max(counts[1:]) > 2:
             result = unique[np.argmax(counts[1:]) + 1].item()
     return result
+
+
+def get_metrics(y_true, y_pred):
+    mcm = multilabel_confusion_matrix(y_true, y_pred)
+
+    tp = mcm[:, 1, 1]
+    tn = mcm[:, 0, 0]
+    fn = mcm[:, 1, 0]
+    fp = mcm[:, 0, 1]
+
+    np.seterr(divide='ignore',invalid='ignore')
+    recall = tp / (tp + fn)
+    recall[np.isnan(recall)] = 1
+    precision = tp / (tp + fp)
+    precision[np.isnan(precision)] = 1
+    acc = (tp + tn) / (tp + tn + fp + fn)
+    f1_score = 2 * recall * precision / (recall + precision)
+    return acc, f1_score

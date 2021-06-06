@@ -118,7 +118,7 @@ def get_path2label_dict(case_list, failed_branch_list, stage='train'):
     return path2label_dict, normal_branch_num
 
 
-class Train_Dataset(Dataset):
+class Segment_Dataset(Dataset):
     def __init__(self, paths, transform, pad_len=70):
 
         self.transform = transform

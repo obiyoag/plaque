@@ -11,9 +11,9 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
 from networks.net_factory import net_factory
-from utils import set_seed, Data_Augmenter
-from datasets import Eval_Dataset, Train_Dataset, split_dataset, BalancedSampler
-from learning import train, evaluate
+from utils import Center_Crop, set_seed, Data_Augmenter, Center_Crop
+from datasets import Eval_Dataset, Segment_Dataset, split_dataset, BalancedSampler
+from learning import train, evaluate, segment_evaluate
 
 
 def parse_args():
@@ -32,11 +32,11 @@ def parse_args():
 
 def main(args, train_paths, val_paths):
 
-    train_dataset = Train_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
+    train_dataset = Segment_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
-    val_dataset = Eval_Dataset(val_paths)
+    val_dataset = Segment_Dataset(val_paths, transform=transforms.Compose([Center_Crop()]))
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=True)
 
     model = net_factory(args.model).to(args.device)
@@ -54,7 +54,7 @@ def main(args, train_paths, val_paths):
         iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
         # validation
         if iter_num > 0 and iter_num % 1 == 0:
-            performance = evaluate(args, model, val_loader, iter_num, writer)
+            performance = segment_evaluate(args, model, val_loader, iter_num, writer)
             if performance > best_performance:
                 best_performance = performance
                 save_mode_path = os.path.join(args.snapshot_path, 'iter_{}_dice_{}.pth'.format(iter_num, round(best_performance, 4)))
