@@ -11,9 +11,9 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
 from networks.net_factory import net_factory
-from utils import Center_Crop, set_seed, Data_Augmenter, Center_Crop
-from datasets import Eval_Dataset, Segment_Dataset, split_dataset, BalancedSampler
-from learning import train, evaluate, segment_evaluate
+from utils import set_seed, Data_Augmenter, Center_Crop
+from datasets import Branch_Dataset, Segment_Dataset, split_dataset, BalancedSampler, Patient_Dataset
+from learning import train, evaluate, segment_evaluate, branch_evaluate, patient_evaluate
 
 
 def parse_args():
@@ -26,7 +26,9 @@ def parse_args():
     parser.add_argument('--arr_columns', default=240, type=int, help='num of cols in balanced matrix')
     parser.add_argument('--num_samples', default=80, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
-    parser.add_argument('--snapshot_path', default='../', type=str, help="select the model")
+    parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
+    parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
+    parser.add_argument('--eval_level', default='branch', type=str, help='choose the level to eval, [segment, branch, patient]')
     
     return parser.parse_args()
 
@@ -36,8 +38,15 @@ def main(args, train_paths, val_paths):
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
-    val_dataset = Segment_Dataset(val_paths, transform=transforms.Compose([Center_Crop()]))
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=True)
+    if args.eval_level == 'segment':
+        val_dataset = Segment_Dataset(val_paths, transform=transforms.Compose([Center_Crop()]))
+    elif args.eval_level == 'branch':
+        val_dataset = Branch_Dataset(val_paths, args.pred_unit)
+    elif args.eval_level == 'patient':
+        val_dataset = Patient_Dataset(val_paths)
+    else:
+        raise NotImplementedError
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
     model = net_factory(args.model).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -50,11 +59,22 @@ def main(args, train_paths, val_paths):
     iterator = tqdm(range(epoch), ncols=70)
 
     for epoch_num in iterator:
+
         # train
-        iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
+        # iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
+
         # validation
-        if iter_num > 0 and iter_num % 1 == 0:
-            performance = segment_evaluate(args, model, val_loader, iter_num, writer)
+        if iter_num == 0 and iter_num % 1 == 0:
+
+            if args.eval_level == 'segment':
+                performance = segment_evaluate(args, model, val_loader, iter_num, writer)
+            elif args.eval_level == 'branch':
+                performance = branch_evaluate(args, model, val_loader, iter_num, writer)
+            elif args.eval_level == 'patient':
+                performance = patient_evaluate(args, model, val_loader, iter_num, writer)
+            else:
+                raise NotImplementedError
+
             if performance > best_performance:
                 best_performance = performance
                 save_mode_path = os.path.join(args.snapshot_path, 'iter_{}_dice_{}.pth'.format(iter_num, round(best_performance, 4)))

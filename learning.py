@@ -96,20 +96,60 @@ def segment_evaluate(args, model, val_loader, iter_num, writer):
         stenosis_acc, stenosis_f1 = get_metrics(stenosis_label_list, stenosis_pred_list)
 
         for i in range(len(type_acc)):
-            writer.add_scalar('eval/type_{}_acc'.format(i), type_acc[i], iter_num)
-            writer.add_scalar('eval/type_{}_f1'.format(i), type_f1[i], iter_num)
+            writer.add_scalar('segment_eval/type_{}_acc'.format(i), type_acc[i], iter_num)
+            writer.add_scalar('segment_eval/type_{}_f1'.format(i), type_f1[i], iter_num)
         
         for i in range(len(stenosis_acc)):
-            writer.add_scalar('eval/stenosis_{}_acc'.format(i), stenosis_acc[i], iter_num)
-            writer.add_scalar('eval/stenosis_{}_f1'.format(i), stenosis_f1[i], iter_num)
+            writer.add_scalar('segment_eval/stenosis_{}_acc'.format(i), stenosis_acc[i], iter_num)
+            writer.add_scalar('segment_eval/stenosis_{}_f1'.format(i), stenosis_f1[i], iter_num)
         
         performance = (type_acc.mean() + stenosis_acc.mean()) / 2
-        writer.add_scalar('eval/performance', performance, iter_num)
-        writer.add_scalar('eval/type_mean_acc', type_acc.mean(), iter_num)
-        writer.add_scalar('eval/type_mean_f1', type_f1.mean(), iter_num)
-        writer.add_scalar('eval/stenosis_mean_acc', stenosis_acc.mean(), iter_num)
-        writer.add_scalar('eval/stenosis_mean_f1', stenosis_f1.mean(), iter_num)
+        writer.add_scalar('segment_eval/performance', performance, iter_num)
+        writer.add_scalar('segment_eval/type_mean_acc', type_acc.mean(), iter_num)
+        writer.add_scalar('segment_eval/type_mean_f1', type_f1.mean(), iter_num)
+        writer.add_scalar('segment_eval/stenosis_mean_acc', stenosis_acc.mean(), iter_num)
+        writer.add_scalar('segment_eval/stenosis_mean_f1', stenosis_f1.mean(), iter_num)
 
         logging.info('iteration %d : performance: %f, acc_type: %f, f1_type: %f, acc_stenosis: %f, f1_stenosis: %f' %(iter_num, performance, type_acc.mean(), type_f1.mean(), stenosis_acc.mean(), stenosis_f1.mean()))
 
     return performance
+
+def branch_evaluate(args, model, val_loader, iter_num, writer):  # 在branch-level不评估种类，只评估狭窄程度
+    with torch.no_grad():
+        model.eval()
+        pad_len = (args.pred_unit - 1) // 2
+
+        set_pred_list = []
+        set_label_list = []
+
+        for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
+
+            length = image.size(2) - 2 * pad_len
+            stenosis = stenosis[0]
+            branch_pred_list = []
+
+            for i in range(length):
+                input = image[:, :, i: i + args.pred_unit, :, :].float().to(args.device)
+                type_output, stenosis_output = model(input, steps=5, device=args.device)
+                branch_pred_list.append(torch.max(torch.softmax(stenosis_output, dim=1), dim=1)[1].item())
+            
+            set_pred_list.append(max(branch_pred_list))
+            set_label_list.append(max(stenosis))
+            
+        stenosis_acc, stenosis_f1 = get_metrics(set_label_list, set_pred_list)
+
+        for i in range(len(stenosis_acc)):
+            writer.add_scalar('branch_eval/stenosis_{}_acc'.format(i), stenosis_acc[i], iter_num)
+            writer.add_scalar('branch_eval/stenosis_{}_f1'.format(i), stenosis_f1[i], iter_num)
+        
+        performance = stenosis_acc.mean()
+        writer.add_scalar('branch_eval/performance', performance, iter_num)
+        writer.add_scalar('branch_eval/stenosis_mean_acc', stenosis_acc.mean(), iter_num)
+        writer.add_scalar('branch_eval/stenosis_mean_f1', stenosis_f1.mean(), iter_num)
+
+        logging.info('iteration %d : performance: %f, acc_stenosis: %f, f1_stenosis: %f' %(iter_num, performance, stenosis_acc.mean(), stenosis_f1.mean()))
+
+    return performance
+
+def patient_evaluate(args, model, val_loader, iter_num, writer):
+    pass

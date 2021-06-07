@@ -192,6 +192,96 @@ class Segment_Dataset(Dataset):
         return result
 
 
+class Branch_Dataset(Dataset):
+    def __init__(self, paths, pred_unit=45):
+        assert pred_unit % 2 != 0, print("pred_unit should be odd.")
+        self.pad_len = (pred_unit - 1) // 2
+
+        try:
+            with open('failed_branches.json', 'r') as f:
+                json_dict = json.load(f)
+                failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
+        except IOError:
+            print('failed_branches.json not found.')
+        
+        self.path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, stage='eval')
+    
+        self.path_list = list(self.path2label_dict.keys())
+        self.label_list = list(self.path2label_dict.values())
+
+        print('normal branch num: {}'.format(normal_branch_num))
+        print('abnormal branch num: {}'.format(len(self.path_list) - normal_branch_num))
+        print('total branch num: {}'.format(len(self.path_list)))
+        print('--' * 30)
+
+    def __len__(self):
+        return len(self.path_list)
+
+    def __getitem__(self, idx):
+        path, label = self.path_list[idx], self.label_list[idx]
+        
+        mpr_path = os.path.join(path, 'mpr.nii.gz')
+        mpr_itk = sitk.ReadImage(mpr_path)
+        image = sitk.GetArrayFromImage(mpr_itk)
+        image = self._center_crop(image)
+
+        image, plaque_type, stenosis = self._pad_img_label(image, label)
+    
+        return image, plaque_type, stenosis
+        
+    def _digitize_stenosis(self, stenosis):
+        """
+        将每一帧的狭窄程度转变为离散化label
+        """
+        result = []
+        for item in stenosis:
+            if 0 <= item < 20:
+                result.append(0)
+            elif 20 <= item < 50:
+                result.append(1)
+            elif item >= 50:
+                result.append(2)
+        return result
+    
+    def _center_crop(self, image, crop_size=50):
+        channel, height, width = image.shape
+        x_center = width//2
+        y_center = height//2
+        cropped_image = image[:, y_center - crop_size//2: y_center + crop_size//2, x_center - crop_size//2: x_center + crop_size//2]
+        return cropped_image
+
+    def _pad_img_label(self, image, label):
+        """
+        将image前后都填充pad_len个0, label变为和image等长的列表
+        """
+        length, height, width = image.shape
+        pad_img = np.zeros((2 * self.pad_len + length, height, width))
+        pad_img[self.pad_len: self.pad_len + image.shape[0], :, :] = image
+        pad_img = np.expand_dims(pad_img, axis=0)
+
+        pad_type = np.zeros((length,), dtype=np.int)
+        pad_stenosis = np.zeros((length,), dtype=np.int)
+        for seg in label:
+            plaque_type = seg[0]
+            plaque_idx = seg[1]
+            stenosis = self._digitize_stenosis(seg[2])
+            pad_type[plaque_idx[0]: plaque_idx[-1] + 1] = plaque_type
+            pad_stenosis[plaque_idx[0]: plaque_idx[-1] + 1] = stenosis
+
+        return pad_img, pad_type, pad_stenosis
+
+
+class Patient_Dataset(Dataset):
+    def __init__(self):
+        pass
+
+    def __len__(self):
+        return 0
+
+    def __getitem__(self, idx):
+        return 0
+
+
 class Eval_Dataset(Dataset):
     def __init__(self, paths, pred_unit=45):
         self.pred_unit = pred_unit
@@ -339,9 +429,10 @@ if __name__ == "__main__":
     #     break
 
     # 调试Eval_Dataset
-    val_dataset = Eval_Dataset(val_paths)
+    val_dataset = Branch_Dataset(val_paths)
     for i in range(len(val_dataset)):
         image, type, stenosis = val_dataset[i]
         print(image.shape)
-        plt.imshow(image[0, 5, :, :], cmap='gray')
+        plt.imshow(image[0, 22, :, :], cmap='gray')
         plt.show()
+        break
