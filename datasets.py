@@ -119,26 +119,15 @@ def get_path2label_dict(case_list, failed_branch_list, stage='train'):
 
 
 class Segment_Dataset(Dataset):
-    def __init__(self, paths, transform, pad_len=70):
-
+    def __init__(self, paths, failed_branch_list, transform, pad_len=70):
         self.transform = transform
         self.pad_len = pad_len
-
-        try:
-            with open('failed_branches.json', 'r') as f:
-                json_dict = json.load(f)
-                failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
-                print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
-        except IOError:
-            print('failed_branches.json not found.')
-        
-        path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, stage='train')
-    
         self.path_list = []
         self.type_list = []
         self.index_list = []
         self.stenosis_list = []
 
+        path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, stage='train')
         for branch_path in list(path2label_dict.keys()):
             label = path2label_dict[branch_path]
             for seg in label:
@@ -193,7 +182,7 @@ class Segment_Dataset(Dataset):
 
 
 class Branch_Dataset(Dataset):
-    def __init__(self, paths, pred_unit=45):
+    def __init__(self, paths, failed_branch_list, pred_unit=45):
         assert pred_unit % 2 != 0, print("pred_unit should be odd.")
         self.pad_len = (pred_unit - 1) // 2
 
@@ -272,94 +261,37 @@ class Branch_Dataset(Dataset):
 
 
 class Patient_Dataset(Dataset):
-    def __init__(self):
-        pass
+    def __init__(self, paths, failed_branch_list):
+        path2label_dict = {}
+    
+        for case_path in paths:
+            branch_list = os.listdir(case_path)
+            for branch_id in branch_list:
+                branch_path = os.path.join(case_path, str(branch_id))
+
+                if branch_path in failed_branch_list:  # 排除没有通过检测的branch
+                    continue
+
+                json_path = os.path.join(branch_path, 'plaque.json')
+
+                try:
+                    with open(json_path, 'r') as f:
+                        dict = json.load(f)
+                        if len(dict['plaques']) != 0:  # 如果相应branch不是正常的，则得到segmentlabel
+                            path2label_dict[branch_path] = process_label(dict['plaques'])
+                            abnormal_branch_num += 1
+                        else:  # 如果相应branch是正常的，则有概率在branch中sample一段正常的segment
+                            if random.uniform(0, 1) > sample_normal_prob:
+                                path2label_dict[branch_path] = sample_normal(branch_path, stage)
+                                normal_branch_num += 1
+                except IOError:
+                    print("plaque json file not found.")
 
     def __len__(self):
-        return 0
+        return 
 
     def __getitem__(self, idx):
         return 0
-
-
-class Eval_Dataset(Dataset):
-    def __init__(self, paths, pred_unit=45):
-        self.pred_unit = pred_unit
-
-        try:
-            with open('failed_branches.json', 'r') as f:
-                json_dict = json.load(f)
-                failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
-        except IOError:
-            print('failed_branches.json not found.')
-        
-        self.path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, stage='eval')
-    
-        self.path_list = list(self.path2label_dict.keys())
-        self.label_list = list(self.path2label_dict.values())
-
-        print('normal branch num: {}'.format(normal_branch_num))
-        print('abnormal branch num: {}'.format(len(self.path_list) - normal_branch_num))
-        print('total branch num: {}'.format(len(self.path_list)))
-        print('--' * 30)
-
-    def __len__(self):
-        return len(self.path_list)
-
-    def __getitem__(self, idx):
-        path, label = self.path_list[idx], self.label_list[idx]
-        
-        mpr_path = os.path.join(path, 'mpr.nii.gz')
-        mpr_itk = sitk.ReadImage(mpr_path)
-        image = sitk.GetArrayFromImage(mpr_itk)
-        image = self._center_crop(image)
-        length = image.shape[0]
-        pad_len = ceil(length / self.pred_unit) * self.pred_unit
-
-        image, plaque_type, stenosis = self._pad_img_label(image, label, pad_len)
-    
-        return image, plaque_type, stenosis
-        
-    def _digitize_stenosis(self, stenosis):
-        """
-        将每一帧的狭窄程度转变为离散化label
-        """
-        result = []
-        for item in stenosis:
-            if item == 0:
-                result.append(0)
-            elif 0 < item < 50:
-                result.append(1)
-            elif item >= 50:
-                result.append(2)
-        return result
-    
-    def _center_crop(self, image, crop_size=50):
-        channel, height, width = image.shape
-        x_center = width//2
-        y_center = height//2
-        cropped_image = image[:, y_center - crop_size//2: y_center + crop_size//2, x_center - crop_size//2: x_center + crop_size//2]
-        return cropped_image
-
-    def _pad_img_label(self, image, label, pad_len):
-        """
-        将image和label填充到45的整数倍
-        """
-        pad_img = np.zeros((pad_len, image.shape[1], image.shape[2]))
-        pad_img[0: image.shape[0], :, :] = image
-        pad_img = np.expand_dims(pad_img, axis=0)
-
-        pad_type = np.zeros((pad_len,), dtype=np.int)
-        pad_stenosis = np.zeros((pad_len,), dtype=np.int)
-        for seg in label:
-            plaque_type = seg[0]
-            plaque_idx = seg[1]
-            stenosis = self._digitize_stenosis(seg[2])
-            pad_type[plaque_idx[0]: plaque_idx[-1] + 1] = plaque_type
-            pad_stenosis[plaque_idx[0]: plaque_idx[-1] + 1] = stenosis
-
-        return pad_img, pad_type, pad_stenosis
-
 
 class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个斑块类别平衡，一个狭窄程度平衡
     def __init__(self, type_list, stenosis_list, arr_columns=256, num_samples=32):

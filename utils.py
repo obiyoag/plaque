@@ -87,10 +87,15 @@ def get_metrics(y_true, y_pred):
     fp = mcm[:, 0, 1]
 
     np.seterr(divide='ignore',invalid='ignore')
+
     recall = tp / (tp + fn)
     recall[np.isnan(recall)] = 1
+
     precision = tp / (tp + fp)
     precision[np.isnan(precision)] = 1
+
     acc = (tp + tn) / (tp + tn + fp + fn)
     f1_score = 2 * recall * precision / (recall + precision)
+    f1_score[np.isnan(f1_score)] = 0
+    
     return acc, f1_score

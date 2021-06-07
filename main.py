@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import torch
 import logging
 import argparse
@@ -18,7 +19,7 @@ from learning import train, evaluate, segment_evaluate, branch_evaluate, patient
 
 def parse_args():
     parser = argparse.ArgumentParser('main')
-    parser.add_argument('--data_path', default='/Users/gaoyibo/Datasets/plaque_data_whole/', type=str, help='data path')
+    parser.add_argument('--data_path', default='/home/gyb/Datasets/plaque_data_whole/', type=str, help='data path')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -34,16 +35,24 @@ def parse_args():
 
 def main(args, train_paths, val_paths):
 
-    train_dataset = Segment_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
+    try:
+        with open('failed_branches.json', 'r') as f:
+            json_dict = json.load(f)
+            failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
+            print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
+    except IOError:
+        print('failed_branches.json not found.')
+
+    train_dataset = Segment_Dataset(train_paths, failed_branch_list, transform=transforms.Compose([Data_Augmenter()]))
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
     if args.eval_level == 'segment':
-        val_dataset = Segment_Dataset(val_paths, transform=transforms.Compose([Center_Crop()]))
+        val_dataset = Segment_Dataset(val_paths, failed_branch_list, transform=transforms.Compose([Center_Crop()]))
     elif args.eval_level == 'branch':
-        val_dataset = Branch_Dataset(val_paths, args.pred_unit)
+        val_dataset = Branch_Dataset(val_paths, failed_branch_list, args.pred_unit)
     elif args.eval_level == 'patient':
-        val_dataset = Patient_Dataset(val_paths)
+        val_dataset = Patient_Dataset(val_paths, failed_branch_list)
     else:
         raise NotImplementedError
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
@@ -61,11 +70,10 @@ def main(args, train_paths, val_paths):
     for epoch_num in iterator:
 
         # train
-        # iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
+        iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
 
         # validation
-        if iter_num == 0 and iter_num % 1 == 0:
-
+        if iter_num > 0 and iter_num % 2 == 0:
             if args.eval_level == 'segment':
                 performance = segment_evaluate(args, model, val_loader, iter_num, writer)
             elif args.eval_level == 'branch':
