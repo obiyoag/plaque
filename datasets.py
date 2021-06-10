@@ -2,12 +2,10 @@ import os
 import json
 import random
 import numpy as np
-from math import ceil
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
-from torchvision import transforms
-from utils import set_seed, Data_Augmenter
-from torch.utils.data import Dataset, Sampler, DataLoader
+from utils import set_seed, Data_Augmenter, BalancedSampler, Center_Crop
+from torch.utils.data import Dataset, DataLoader
 
 
 def split_dataset(case_list):
@@ -54,6 +52,23 @@ def process_label(label):  # 消除label中的重复帧，并排序
     for seg in label:
         label_list.append(process_one_seg(seg))
     return label_list
+
+
+def digitize_stenosis(stenosis):
+    """
+    按照segment中的狭窄程度，返回一个狭窄程度label
+    0-20没有狭窄，20-50轻度，50-100重度
+    """
+    result = 0
+    max_stenosis = max(stenosis)
+    if 0 <= max_stenosis < 20:
+        result = 0
+    elif 20<= max_stenosis <50:
+        result = 1
+    elif max_stenosis >= 50:
+        result = 2
+    return result
+
 
 def sample_normal(branch_path, stage='train', avg=15.84, std=11.53, min_len=2, max_len=67, ):  # 这里的统计值是训练集标注的segment的
     """
@@ -134,7 +149,7 @@ class Segment_Dataset(Dataset):
                 self.path_list.append(branch_path)
                 self.type_list.append(seg[0])
                 self.index_list.append(seg[1])
-                self.stenosis_list.append(self._digitize_stenosis(seg[2]))
+                self.stenosis_list.append(digitize_stenosis(seg[2]))
 
         print('normal seg num: {}'.format(normal_branch_num))
         print('abnormal seg num: {}'.format(len(self.path_list) - normal_branch_num))
@@ -165,36 +180,13 @@ class Segment_Dataset(Dataset):
         pad_img = np.expand_dims(pad_img, axis=0)
         return pad_img
 
-    def _digitize_stenosis(self, stenosis):
-        """
-        按照segment中最大的狭窄程度，返回一个狭窄程度label
-        0-20没有狭窄，20-50轻度，50-100重度
-        """
-        result = 0
-        max_stenosis = max(stenosis)
-        if 0 <= max_stenosis < 20:
-            result = 0
-        elif 20<= max_stenosis <50:
-            result = 1
-        elif max_stenosis >= 50:
-            result = 2
-        return result
-
 
 class Branch_Dataset(Dataset):
-    def __init__(self, paths, failed_branch_list, pred_unit=45):
+    def __init__(self, paths, failed_branch_list, pred_unit, transform):
         assert pred_unit % 2 != 0, print("pred_unit should be odd.")
         self.pad_len = (pred_unit - 1) // 2
-
-        try:
-            with open('failed_branches.json', 'r') as f:
-                json_dict = json.load(f)
-                failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
-        except IOError:
-            print('failed_branches.json not found.')
-        
+        self.transform = transform
         self.path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, stage='eval')
-    
         self.path_list = list(self.path2label_dict.keys())
         self.label_list = list(self.path2label_dict.values())
 
@@ -208,37 +200,15 @@ class Branch_Dataset(Dataset):
 
     def __getitem__(self, idx):
         path, label = self.path_list[idx], self.label_list[idx]
-        
+
         mpr_path = os.path.join(path, 'mpr.nii.gz')
         mpr_itk = sitk.ReadImage(mpr_path)
         image = sitk.GetArrayFromImage(mpr_itk)
-        image = self._center_crop(image)
-
         image, plaque_type, stenosis = self._pad_img_label(image, label)
+        image = self.transform(image)
     
         return image, plaque_type, stenosis
         
-    def _digitize_stenosis(self, stenosis):
-        """
-        将每一帧的狭窄程度转变为离散化label
-        """
-        result = []
-        for item in stenosis:
-            if 0 <= item < 20:
-                result.append(0)
-            elif 20 <= item < 50:
-                result.append(1)
-            elif item >= 50:
-                result.append(2)
-        return result
-    
-    def _center_crop(self, image, crop_size=50):
-        channel, height, width = image.shape
-        x_center = width//2
-        y_center = height//2
-        cropped_image = image[:, y_center - crop_size//2: y_center + crop_size//2, x_center - crop_size//2: x_center + crop_size//2]
-        return cropped_image
-
     def _pad_img_label(self, image, label):
         """
         将image前后都填充pad_len个0, label变为和image等长的列表
@@ -253,7 +223,7 @@ class Branch_Dataset(Dataset):
         for seg in label:
             plaque_type = seg[0]
             plaque_idx = seg[1]
-            stenosis = self._digitize_stenosis(seg[2])
+            stenosis = digitize_stenosis(seg[2])
             pad_type[plaque_idx[0]: plaque_idx[-1] + 1] = plaque_type
             pad_stenosis[plaque_idx[0]: plaque_idx[-1] + 1] = stenosis
 
@@ -261,12 +231,15 @@ class Branch_Dataset(Dataset):
 
 
 class Patient_Dataset(Dataset):
-    def __init__(self, paths, failed_branch_list):
-        path2label_dict = {}
-    
+    def __init__(self, paths, failed_branch_list, pred_unit, transform):
+        assert pred_unit % 2 != 0, print("pred_unit should be odd.")
+        self.pad_len = (pred_unit - 1) // 2
+        self.transform = transform
+        self.cases_list = []
+
         for case_path in paths:
-            branch_list = os.listdir(case_path)
-            for branch_id in branch_list:
+            case_list = []
+            for branch_id in os.listdir(case_path):
                 branch_path = os.path.join(case_path, str(branch_id))
 
                 if branch_path in failed_branch_list:  # 排除没有通过检测的branch
@@ -278,69 +251,48 @@ class Patient_Dataset(Dataset):
                     with open(json_path, 'r') as f:
                         dict = json.load(f)
                         if len(dict['plaques']) != 0:  # 如果相应branch不是正常的，则得到segmentlabel
-                            path2label_dict[branch_path] = process_label(dict['plaques'])
-                            abnormal_branch_num += 1
+                            case_list.append({branch_path: process_label(dict['plaques'])})
                         else:  # 如果相应branch是正常的，则有概率在branch中sample一段正常的segment
-                            if random.uniform(0, 1) > sample_normal_prob:
-                                path2label_dict[branch_path] = sample_normal(branch_path, stage)
-                                normal_branch_num += 1
+                            case_list.append({branch_path: sample_normal(branch_path, 'eval')})
                 except IOError:
                     print("plaque json file not found.")
 
+            self.cases_list.append(case_list)
+
     def __len__(self):
-        return 
+        return len(self.cases_list)
+    
+    def _read_img(self, branch_path):
+        mpr_path = os.path.join(branch_path, 'mpr.nii.gz')
+        mpr_itk = sitk.ReadImage(mpr_path)
+        image = sitk.GetArrayFromImage(mpr_itk)
+        length, height, width = image.shape
+        pad_img = np.zeros((2 * self.pad_len + length, height, width))
+        pad_img[self.pad_len: self.pad_len + image.shape[0], :, :] = image
+        pad_img = np.expand_dims(pad_img, axis=0)
+        pad_img = self.transform(pad_img)
+        return pad_img
+    
+    def _get_branch_stenosis(self, branch_label):
+        branch_stenosis_list = []
+        for seg in branch_label:
+            branch_stenosis_list.append(digitize_stenosis(seg[2]))
+        return max(branch_stenosis_list)
 
     def __getitem__(self, idx):
-        return 0
-
-class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个斑块类别平衡，一个狭窄程度平衡
-    def __init__(self, type_list, stenosis_list, arr_columns=256, num_samples=32):
-        assert arr_columns > 217, print('num of arr_columns should be greater than 217')
-        assert arr_columns % num_samples == 0 and num_samples <= arr_columns, print('arr_columns should be a multiple of num_samples and >= num_samples.')
-        self.num_samples = num_samples  # 采样次数
-        self.arr_columns = arr_columns  # 得到类别平衡矩阵的列数
-
-        type_unique, type_counts = np.unique(type_list, return_counts=True)
-        stenosis_unique, stenosis_counts = np.unique(stenosis_list, return_counts=True)
-
-        print('type label: {}, type label num: {}'.format(type_unique.tolist(), type_counts.tolist()))
-        print('stenosis label: {}, stenosis label num: {}'.format(stenosis_unique.tolist(), stenosis_counts.tolist()))
-        print('--' * 30)
-
-        self.type_arr = np.zeros((len(type_unique), self.arr_columns), dtype=np.int)
-        self.stenosis_arr = np.zeros((len(stenosis_unique), self.arr_columns), dtype=np.int)
-
-        for i in type_unique:
-            self.type_arr[i] = np.tile(np.where(np.array(type_list) == i)[0], 20)[:self.arr_columns]  # 找到对应label在列表中的位置，并复制到最大频率，放入数组
-        for i in stenosis_unique:
-            self.stenosis_arr[i] = np.tile(np.where(np.array(stenosis_list) == i)[0], 3)[:self.arr_columns]
-
-    def __iter__(self):
-        type_arr = self._shuffle_along_axis(self.type_arr, axis=1)
-        stenosis_arr = self._shuffle_along_axis(self.stenosis_arr, axis=1)
-
-        type_col_list = [item.reshape(-1).tolist() for item in np.hsplit(type_arr, self.num_samples)]  # 把整个arr分成num_samples份拉直放进list，list中的元素是类别平衡的
-        stenosis_col_list = [item.reshape(-1).tolist() for item in np.hsplit(stenosis_arr, self.num_samples)]
-
-        # batch_size = (arr_columns / num_samples) * 7
-        batch = []
-        for i in range(self.num_samples):
-            batch.extend(type_col_list[i])
-            batch.extend(stenosis_col_list[i])
-            random.shuffle(batch)
-            yield batch
-            batch = []
-
-    def __len__(self):
-        return self.num_samples
-
-    def _shuffle_along_axis(self, a, axis):  # 在指定轴上打乱numpy数组
-        idx = np.random.rand(*a.shape).argsort(axis=axis)
-        return np.take_along_axis(a,idx,axis=axis)
+        case_list = self.cases_list[idx]
+        branch_list = []
+        for branch in case_list:
+            (branch_path, branch_label), = branch.items()
+            image = self._read_img(branch_path)
+            stenosis = self._get_branch_stenosis(branch_label)
+            sample = {'image': image, 'label': stenosis}
+            branch_list.append(sample)
+        return branch_list
 
 
 if __name__ == "__main__":
-    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
+    data_path = '/home/gyb/Datasets/plaque_data_whole/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
@@ -349,22 +301,36 @@ if __name__ == "__main__":
 
     train_paths, val_paths, test_paths = split_dataset(case_list)
 
-    # 调试Train_Dataset
-    # train_dataset = Train_Dataset(train_paths, transform=transforms.Compose([Data_Augmenter()]))
-    # balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list)
-    # train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
+    try:
+        with open('failed_branches.json', 'r') as f:
+            json_dict = json.load(f)
+            failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
+            print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
+    except IOError:
+        print('failed_branches.json not found.')
 
-    # for idx, (image, plaque_type, stenosis) in enumerate(train_loader):
-    #     print(image.shape)
-    #     plt.imshow(image[0, 0, 2, :, :], cmap='gray')
-    #     plt.show()
-    #     break
+    #  调试Segment_Dataset
+    train_dataset = Segment_Dataset(train_paths, failed_branch_list, transform=Data_Augmenter(prob=1))
+    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 240, 80)
+    train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
+    for idx, (image, plaque_type, stenosis) in enumerate(train_loader):
+        plt.imshow(image[0, 0, 2, :, :], cmap='gray')
+        plt.show()
+        break
 
-    # 调试Eval_Dataset
-    val_dataset = Branch_Dataset(val_paths)
+    # 调试Branch_Dataset
+    val_dataset = Branch_Dataset(val_paths, failed_branch_list, 45, transform=Center_Crop())
     for i in range(len(val_dataset)):
         image, type, stenosis = val_dataset[i]
-        print(image.shape)
         plt.imshow(image[0, 22, :, :], cmap='gray')
         plt.show()
         break
+
+    #  调试Patient_Dataset
+    val_dataset = Patient_Dataset(val_paths, failed_branch_list, 45, transform=Center_Crop())
+    for i in range(len(val_dataset)):
+        branch_list = val_dataset[i]
+        patient_pred_list = []
+        patient_label_list = []
+        for branch in branch_list:
+            image, label = branch['image'], branch['label']

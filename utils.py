@@ -2,6 +2,7 @@ import torch
 import random
 import numpy as np
 from scipy import ndimage
+from torch.utils.data import Sampler
 from sklearn.metrics import multilabel_confusion_matrix
 
 
@@ -13,6 +14,10 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
+def normalize(image):
+    max, min = image.max(), image.min()
+    out = (image - min) / (max - min)
+    return out
 
 def random_crop(image, crop_size, move, prob):
     channel, depth, height, width = image.shape
@@ -30,7 +35,7 @@ def random_crop(image, crop_size, move, prob):
 def random_rotate(image, prob):
     if random.uniform(0, 1) < prob:
         angle = np.random.randint(-180, 180)
-        image = ndimage.rotate(image, angle, axes=(2,3), reshape=False)  # axes确定旋转平面
+        image = ndimage.rotate(image, angle, axes=(-2,-1), reshape=False)  # axes确定旋转平面
     return image
 
 def add_gaussian_noise(image, prob, mean=0, var=0.0005):
@@ -49,6 +54,7 @@ class Data_Augmenter(object):
         self.prob = prob
 
     def __call__(self, image):
+        image = normalize(image)
         image = random_rotate(image, self.prob)
         image = random_crop(image, self.crop_size, self.move, self.prob)
         image = add_gaussian_noise(image, self.prob)
@@ -60,22 +66,9 @@ class Center_Crop(object):
         self.crop_size = crop_size
 
     def __call__(self, image):
+        image = normalize(image)
         image = random_crop(image, self.crop_size, 0, 0)
         return image
-
-
-def seg_digitize(type_seg):
-    """
-    将一段seg_label转化为一个值
-    """
-    result = 0
-    unique, counts = np.unique(type_seg, return_counts=True)
-    if len(unique) == 1:  # seg_label为同一个值
-        result = unique.item()
-    else:  # seg_label不为同一个值，结果为长度大于2的最长非零值的值
-        if max(counts[1:]) > 2:
-            result = unique[np.argmax(counts[1:]) + 1].item()
-    return result
 
 
 def get_metrics(y_true, y_pred):
@@ -99,3 +92,49 @@ def get_metrics(y_true, y_pred):
     f1_score[np.isnan(f1_score)] = 0
     
     return acc, f1_score
+
+
+class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个斑块类别平衡，一个狭窄程度平衡
+    def __init__(self, type_list, stenosis_list, arr_columns=256, num_samples=32):
+        assert arr_columns > 217, print('num of arr_columns should be greater than 217')
+        assert arr_columns % num_samples == 0 and num_samples <= arr_columns, print('arr_columns should be a multiple of num_samples and >= num_samples.')
+        self.num_samples = num_samples  # 采样次数
+        self.arr_columns = arr_columns  # 得到类别平衡矩阵的列数
+
+        type_unique, type_counts = np.unique(type_list, return_counts=True)
+        stenosis_unique, stenosis_counts = np.unique(stenosis_list, return_counts=True)
+
+        print('type label: {}, type label num: {}'.format(type_unique.tolist(), type_counts.tolist()))
+        print('stenosis label: {}, stenosis label num: {}'.format(stenosis_unique.tolist(), stenosis_counts.tolist()))
+        print('--' * 30)
+
+        self.type_arr = np.zeros((len(type_unique), self.arr_columns), dtype=np.int)
+        self.stenosis_arr = np.zeros((len(stenosis_unique), self.arr_columns), dtype=np.int)
+
+        for i in type_unique:
+            self.type_arr[i] = np.tile(np.where(np.array(type_list) == i)[0], 20)[:self.arr_columns]  # 找到对应label在列表中的位置，并复制到最大频率，放入数组
+        for i in stenosis_unique:
+            self.stenosis_arr[i] = np.tile(np.where(np.array(stenosis_list) == i)[0], 3)[:self.arr_columns]
+
+    def __iter__(self):
+        type_arr = self._shuffle_along_axis(self.type_arr, axis=1)
+        stenosis_arr = self._shuffle_along_axis(self.stenosis_arr, axis=1)
+
+        type_col_list = [item.reshape(-1).tolist() for item in np.hsplit(type_arr, self.num_samples)]  # 把整个arr分成num_samples份拉直放进list，list中的元素是类别平衡的
+        stenosis_col_list = [item.reshape(-1).tolist() for item in np.hsplit(stenosis_arr, self.num_samples)]
+
+        # batch_size = (arr_columns / num_samples) * 7
+        batch = []
+        for i in range(self.num_samples):
+            batch.extend(type_col_list[i])
+            batch.extend(stenosis_col_list[i])
+            random.shuffle(batch)
+            yield batch
+            batch = []
+
+    def __len__(self):
+        return self.num_samples
+
+    def _shuffle_along_axis(self, a, axis):  # 在指定轴上打乱numpy数组
+        idx = np.random.rand(*a.shape).argsort(axis=axis)
+        return np.take_along_axis(a,idx,axis=axis)

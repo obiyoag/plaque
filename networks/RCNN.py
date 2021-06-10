@@ -36,15 +36,16 @@ class RCNN(nn.Module):
         self.stride = stride
 
         self.cnn_extractor = CNN_Extractor()
-        self.rnn = nn.GRU(input_size, self.hidden_size, self.layer_num, dropout=0.5)
-        self.type_classifier = nn.Linear(self.hidden_size, 4)
-        self.stenosis_classifier = nn.Linear(self.hidden_size, 3)
+        self.rnn = nn.GRU(input_size, self.hidden_size, self.layer_num, dropout=0.5, bidirectional=True)
+        self.type_classifier = nn.Linear(self.hidden_size * 2, 4)
+        self.stenosis_classifier = nn.Linear(self.hidden_size * 2, 3)
 
     def forward(self, x, steps, device):
         # steps为滑块个数。训练时为10，验证测试时为5。
         batch_size = x.size(0)
         rnn_input = torch.zeros(steps, batch_size, self.input_size).to(device)
-        h0 = torch.randn(self.layer_num, batch_size, self.hidden_size).to(device)
+        h0 = torch.zeros(2 * self.layer_num, batch_size, self.hidden_size)
+        h0 = nn.init.orthogonal_(h0).to(device)
         for i in range(steps):
             input = x[:, :, i * self.stride: i * self.stride + self.window_size, :, :]
             rnn_input[i] = self.cnn_extractor(input).view(batch_size, -1)
@@ -57,11 +58,12 @@ class RCNN(nn.Module):
 
 if __name__ == "__main__":
     rcnn = RCNN()
+    device = torch.device('cpu')
     
     train_tensor = torch.randn(8, 1, 70, 50, 50)  # (N, C, D, H, W)
-    type_pred_train, stenosis_pred_train = rcnn(train_tensor, 10)
+    type_pred_train, stenosis_pred_train = rcnn(train_tensor, 10, device)
     print(type_pred_train.shape, stenosis_pred_train.shape)
 
     val_tensor = torch.randn(8, 1, 45, 50, 50)  # (N, C, D, H, W)
-    type_pred_val, stenosis_pred_val = rcnn(val_tensor, 5)
+    type_pred_val, stenosis_pred_val = rcnn(val_tensor, 5, device)
     print(type_pred_val.shape, stenosis_pred_val.shape)

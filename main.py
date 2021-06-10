@@ -6,15 +6,14 @@ import logging
 import argparse
 from tqdm import tqdm
 import torch.optim as optim
-from torchvision import transforms
 from torch.nn import CrossEntropyLoss
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
 from networks.net_factory import net_factory
-from utils import set_seed, Data_Augmenter, Center_Crop
-from datasets import Branch_Dataset, Segment_Dataset, split_dataset, BalancedSampler, Patient_Dataset
-from learning import train, evaluate, segment_evaluate, branch_evaluate, patient_evaluate
+from utils import set_seed, Data_Augmenter, Center_Crop, BalancedSampler
+from datasets import split_dataset, Segment_Dataset, Branch_Dataset, Patient_Dataset
+from learning import train, segment_evaluate, branch_evaluate, patient_evaluate
 
 
 def parse_args():
@@ -29,7 +28,7 @@ def parse_args():
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
     parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
-    parser.add_argument('--eval_level', default='branch', type=str, help='choose the level to eval, [segment, branch, patient]')
+    parser.add_argument('--eval_level', default='patient', type=str, help='choose the level to eval, [segment, branch, patient]')
     
     return parser.parse_args()
 
@@ -43,16 +42,16 @@ def main(args, train_paths, val_paths):
     except IOError:
         print('failed_branches.json not found.')
 
-    train_dataset = Segment_Dataset(train_paths, failed_branch_list, transform=transforms.Compose([Data_Augmenter()]))
+    train_dataset = Segment_Dataset(train_paths, failed_branch_list, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
     if args.eval_level == 'segment':
-        val_dataset = Segment_Dataset(val_paths, failed_branch_list, transform=transforms.Compose([Center_Crop()]))
+        val_dataset = Segment_Dataset(val_paths, failed_branch_list, transform=Center_Crop())
     elif args.eval_level == 'branch':
-        val_dataset = Branch_Dataset(val_paths, failed_branch_list, args.pred_unit)
+        val_dataset = Branch_Dataset(val_paths, failed_branch_list, args.pred_unit, transform=Center_Crop())
     elif args.eval_level == 'patient':
-        val_dataset = Patient_Dataset(val_paths, failed_branch_list)
+        val_dataset = Patient_Dataset(val_paths, failed_branch_list, args.pred_unit, transform=Center_Crop())
     else:
         raise NotImplementedError
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
