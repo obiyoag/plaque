@@ -18,7 +18,7 @@ from learning import train, segment_evaluate, branch_evaluate, patient_evaluate
 
 def parse_args():
     parser = argparse.ArgumentParser('main')
-    parser.add_argument('--data_path', default='/home/gyb/Datasets/plaque_data_whole/', type=str, help='data path')
+    parser.add_argument('--data_path', default='/home/gyb/Datasets/plaque_data_whole_new/', type=str, help='data path')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -29,10 +29,17 @@ def parse_args():
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
     parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
     parser.add_argument('--eval_level', default='patient', type=str, help='choose the level to eval, [segment, branch, patient]')
+    parser.add_argument('--train_ratio', default=0.7, type=float, help='the training ratio of all data')
     
     return parser.parse_args()
 
-def main(args, train_paths, val_paths):
+def main(args):
+
+    case_list = sorted(os.listdir(args.data_path))  # 病例列表
+    case_list = [os.path.join(args.data_path, case) for case in case_list]
+    logging.info('total case num: ' + str(len(case_list)))
+
+    train_paths, val_paths = split_dataset(case_list, args.train_ratio)
 
     try:
         with open('failed_branches.json', 'r') as f:
@@ -113,10 +120,4 @@ if __name__ == "__main__":
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
 
-    case_list = sorted(os.listdir(args.data_path))  # 病例列表
-    case_list = [os.path.join(args.data_path, case) for case in case_list]
-    logging.info('total case num: ' + str(len(case_list)))
-
-    train_paths, val_paths, test_paths = split_dataset(case_list)
-
-    main(args, train_paths, val_paths)
+    main(args)

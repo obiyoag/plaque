@@ -9,12 +9,12 @@ from datasets import process_label, split_dataset
 if __name__ == "__main__":
     seed = 57
     set_seed(57)
-    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole'
+    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new'
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
     case_list = [os.path.join(data_path, case) for case in case_list]
 
-    train_paths, val_paths, test_paths = split_dataset(case_list)
+    train_paths, val_paths = split_dataset(case_list, train_ratio=0.7)
 
     try:
         with open('failed_branches.json', 'r') as f:
@@ -25,7 +25,7 @@ if __name__ == "__main__":
         print('failed_branches.json not found.')
 
     train_dict = {}
-    for case_path in train_paths:
+    for case_path in case_list:
         branch_list = os.listdir(case_path)
         for branch_id in branch_list:
             branch_path = os.path.join(case_path, str(branch_id))

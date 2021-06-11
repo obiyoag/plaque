@@ -1,6 +1,6 @@
 import logging
 import torch
-from utils import get_metrics
+from utils import get_metrics, merge_plaque
 
 def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
     model.train()
@@ -61,6 +61,48 @@ def segment_evaluate(args, model, val_loader, iter_num, writer):
         logging.info('segment-level iter %d : performance: %f, acc_type: %f, f1_type: %f, acc_stenosis: %f, f1_stenosis: %f' %(iter_num, performance, type_acc.mean(), type_f1.mean(), stenosis_acc.mean(), stenosis_f1.mean()))
 
     return performance
+
+
+def realseg_evaluate(args, model, val_loader, iter_num, writer):
+    with torch.no_grad():
+        model.eval()
+        type_pred_list = []
+        stenosis_pred_list = []
+        type_label_list = []
+        stenosis_label_list = []
+        for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
+
+            image, plaque_type, stenosis = image.to(args.device).float(), plaque_type, stenosis
+            type_output, stenosis_output = model(image, steps=10, device=args.device)
+            type_pred_list.append(torch.max(torch.softmax(type_output, dim=1), dim=1)[1].item())
+            stenosis_pred_list.append(torch.max(torch.softmax(stenosis_output, dim=1), dim=1)[1].item())
+            type_label_list.append(plaque_type.item())
+            stenosis_label_list.append(stenosis.item())
+        
+        type_pred_list = merge_plaque(type_pred_list)
+        
+        type_acc, type_f1 = get_metrics(type_label_list, type_pred_list)
+        stenosis_acc, stenosis_f1 = get_metrics(stenosis_label_list, stenosis_pred_list)
+
+        for i in range(len(type_acc)):
+            writer.add_scalar('segment_eval/type_{}_acc'.format(i), type_acc[i], iter_num)
+            writer.add_scalar('segment_eval/type_{}_f1'.format(i), type_f1[i], iter_num)
+        
+        for i in range(len(stenosis_acc)):
+            writer.add_scalar('segment_eval/stenosis_{}_acc'.format(i), stenosis_acc[i], iter_num)
+            writer.add_scalar('segment_eval/stenosis_{}_f1'.format(i), stenosis_f1[i], iter_num)
+        
+        performance = (type_acc.mean() + stenosis_acc.mean()) / 2
+        writer.add_scalar('segment_eval/performance', performance, iter_num)
+        writer.add_scalar('segment_eval/type_mean_acc', type_acc.mean(), iter_num)
+        writer.add_scalar('segment_eval/type_mean_f1', type_f1.mean(), iter_num)
+        writer.add_scalar('segment_eval/stenosis_mean_acc', stenosis_acc.mean(), iter_num)
+        writer.add_scalar('segment_eval/stenosis_mean_f1', stenosis_f1.mean(), iter_num)
+
+        logging.info('segment-level iter %d : performance: %f, acc_type: %f, f1_type: %f, acc_stenosis: %f, f1_stenosis: %f' %(iter_num, performance, type_acc.mean(), type_f1.mean(), stenosis_acc.mean(), stenosis_f1.mean()))
+
+    return performance
+
 
 def branch_evaluate(args, model, val_loader, iter_num, writer):  # 在branch-level不评估种类，只评估狭窄程度
     with torch.no_grad():

@@ -138,3 +138,22 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
     def _shuffle_along_axis(self, a, axis):  # 在指定轴上打乱numpy数组
         idx = np.random.rand(*a.shape).argsort(axis=axis)
         return np.take_along_axis(a,idx,axis=axis)
+
+
+def merge_plaque(input_list):
+    zero_list = []
+    result_list = []
+
+    for item in input_list:
+        if item != 0:
+            if len(zero_list) <= 2:
+                for i in range(len(zero_list)):
+                    result_list.append(item)
+                zero_list.clear()
+            result_list.append(item)
+        if item == 0:
+            zero_list.append(item)
+            if len(zero_list) >2:
+                result_list.extend(zero_list)
+
+    return result_list

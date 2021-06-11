@@ -8,21 +8,19 @@ from utils import set_seed, Data_Augmenter, BalancedSampler, Center_Crop
 from torch.utils.data import Dataset, DataLoader
 
 
-def split_dataset(case_list):
+def split_dataset(case_list, train_ratio):
     random.shuffle(case_list)
     case_num = len(case_list)
-    train_num = int(case_num * 0.4)
-    val_num = int(case_num * 0.1)
+    train_num = int(case_num * train_ratio)
     train_paths = case_list[:train_num]
-    val_paths = case_list[train_num: train_num + val_num]
-    test_paths = case_list[train_num + val_num:]
+    val_paths = case_list[train_num:]
 
     print('case num in train_paths: {}'.format(len(train_paths)))
     print('case num in val_paths: {}'.format(len(val_paths)))
-    print('case num in test_paths: {}'.format(len(test_paths)))
     print('--' * 30)
 
-    return train_paths, val_paths, test_paths
+    return train_paths, val_paths
+
 
 def process_label(label):  # 消除label中的重复帧，并排序
     """
@@ -252,7 +250,7 @@ class Patient_Dataset(Dataset):
                         dict = json.load(f)
                         if len(dict['plaques']) != 0:  # 如果相应branch不是正常的，则得到segmentlabel
                             case_list.append({branch_path: process_label(dict['plaques'])})
-                        else:  # 如果相应branch是正常的，则有概率在branch中sample一段正常的segment
+                        else:  # 如果相应branch是正常的，则在branch中sample一段正常的segment
                             case_list.append({branch_path: sample_normal(branch_path, 'eval')})
                 except IOError:
                     print("plaque json file not found.")
@@ -292,7 +290,7 @@ class Patient_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/home/gyb/Datasets/plaque_data_whole/'
+    data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表

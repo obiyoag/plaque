@@ -90,7 +90,7 @@ def get_path2label_dict(case_list):
 
 
 if __name__ == "__main__":
-    path = "/Users/gaoyibo/Datasets/plaque_data_whole/"
+    path = "/Users/gaoyibo/Datasets/plaque_data_whole_new/"
     case_list = sorted(os.listdir(path))
     case_list = [os.path.join(path, case) for case in case_list]
     'total case num: ' + str(len(case_list))
