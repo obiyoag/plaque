@@ -91,15 +91,11 @@ def get_metrics(y_true, y_pred):
     f1_score = 2 * recall * precision / (recall + precision)
     f1_score[np.isnan(f1_score)] = 0
     
-    return acc, f1_score
+    return np.around(100 * acc, 2), np.round(100 * f1_score, 2)
 
 
 class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个斑块类别平衡，一个狭窄程度平衡
-    def __init__(self, type_list, stenosis_list, arr_columns=256, num_samples=32):
-        assert arr_columns > 217, print('num of arr_columns should be greater than 217')
-        assert arr_columns % num_samples == 0 and num_samples <= arr_columns, print('arr_columns should be a multiple of num_samples and >= num_samples.')
-        self.num_samples = num_samples  # 采样次数
-        self.arr_columns = arr_columns  # 得到类别平衡矩阵的列数
+    def __init__(self, type_list, stenosis_list, arr_columns=400, num_samples=50):
 
         type_unique, type_counts = np.unique(type_list, return_counts=True)
         stenosis_unique, stenosis_counts = np.unique(stenosis_list, return_counts=True)
@@ -108,6 +104,11 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
         print('stenosis label: {}, stenosis label num: {}'.format(stenosis_unique.tolist(), stenosis_counts.tolist()))
         print('--' * 30)
 
+        assert arr_columns > max(max(type_counts), max(stenosis_counts)), print('num of arr_columns should be greater than the largest counts')
+        assert arr_columns % num_samples == 0 and num_samples <= arr_columns, print('arr_columns should be a multiple of num_samples and >= num_samples.')
+
+        self.num_samples = num_samples  # 采样次数
+        self.arr_columns = arr_columns  # 得到类别平衡矩阵的列数
         self.type_arr = np.zeros((len(type_unique), self.arr_columns), dtype=np.int)
         self.stenosis_arr = np.zeros((len(stenosis_unique), self.arr_columns), dtype=np.int)
 
@@ -133,7 +134,7 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
             batch = []
 
     def __len__(self):
-        return self.num_samples
+        return (self.arr_columns // self.num_samples) * 7
 
     def _shuffle_along_axis(self, a, axis):  # 在指定轴上打乱numpy数组
         idx = np.random.rand(*a.shape).argsort(axis=axis)
@@ -157,3 +158,13 @@ def merge_plaque(input_list):
                 result_list.extend(zero_list)
 
     return result_list
+
+
+def get_branch_stenosis(branch_label):
+    """
+    从一条branch_label中得到对应的stenosis程度
+    """
+    branch_stenosis = []
+    for seg in branch_label:
+        branch_stenosis.extend(seg[2])
+    return max(branch_stenosis)

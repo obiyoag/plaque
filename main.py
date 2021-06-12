@@ -2,8 +2,10 @@ import os
 import sys
 import json
 import torch
+import shutil
 import logging
 import argparse
+import numpy as np
 from tqdm import tqdm
 import torch.optim as optim
 from torch.nn import CrossEntropyLoss
@@ -12,8 +14,8 @@ from torch.utils.data import DataLoader
 
 from networks.net_factory import net_factory
 from utils import set_seed, Data_Augmenter, Center_Crop, BalancedSampler
-from datasets import split_dataset, Segment_Dataset, Branch_Dataset, Patient_Dataset
-from learning import train, segment_evaluate, branch_evaluate, patient_evaluate
+from datasets import split_dataset, Train_Dataset, Eval_Dataset
+from learning import train, evaluate
 
 
 def parse_args():
@@ -23,13 +25,14 @@ def parse_args():
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
-    parser.add_argument('--arr_columns', default=240, type=int, help='num of cols in balanced matrix')
-    parser.add_argument('--num_samples', default=80, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
+    parser.add_argument('--arr_columns', default=360, type=int, help='num of cols in balanced matrix')
+    parser.add_argument('--num_samples', default=120, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
     parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
-    parser.add_argument('--eval_level', default='patient', type=str, help='choose the level to eval, [segment, branch, patient]')
-    parser.add_argument('--train_ratio', default=0.7, type=float, help='the training ratio of all data')
+    parser.add_argument('--train_ratio', default=0.70, type=float, help='the training ratio of all data')
+    parser.add_argument('--sample_normal_prob', default=0.3, type=float, help='the prob to sample normal segment in a branch if the branch is normal')
+    parser.add_argument('--val_time', default=100, type=int, help='the validation times in training')
     
     return parser.parse_args()
 
@@ -46,22 +49,16 @@ def main(args):
             json_dict = json.load(f)
             failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
             print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
+            print('--' * 30)
     except IOError:
         print('failed_branches.json not found.')
 
-    train_dataset = Segment_Dataset(train_paths, failed_branch_list, transform=Data_Augmenter())
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, args.sample_normal_prob, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
-    if args.eval_level == 'segment':
-        val_dataset = Segment_Dataset(val_paths, failed_branch_list, transform=Center_Crop())
-    elif args.eval_level == 'branch':
-        val_dataset = Branch_Dataset(val_paths, failed_branch_list, args.pred_unit, transform=Center_Crop())
-    elif args.eval_level == 'patient':
-        val_dataset = Patient_Dataset(val_paths, failed_branch_list, args.pred_unit, transform=Center_Crop())
-    else:
-        raise NotImplementedError
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+    val_dataset = Eval_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.pred_unit, transform=Center_Crop())
+    val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
 
     model = net_factory(args.model).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -71,33 +68,26 @@ def main(args):
     iter_num = 0
     best_performance = 0
     epoch = args.iteration // len(train_loader) + 1
-    iterator = tqdm(range(epoch), ncols=70)
+    val_stamps = np.linspace(0, epoch, int(epoch * 0.1)).astype(int)
+    iterator = tqdm(range(epoch), unit='epoch')
 
     for epoch_num in iterator:
+        iterator.set_description(f'Epoch [{epoch_num}/{epoch}]')
 
         # train
         iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
 
         # validation
-        if iter_num > 0 and iter_num % 2 == 0:
-            if args.eval_level == 'segment':
-                performance = segment_evaluate(args, model, val_loader, iter_num, writer)
-            elif args.eval_level == 'branch':
-                performance = branch_evaluate(args, model, val_loader, iter_num, writer)
-            elif args.eval_level == 'patient':
-                performance = patient_evaluate(args, model, val_loader, iter_num, writer)
-            else:
-                raise NotImplementedError
+        if epoch_num in val_stamps:
+            performance = evaluate(args, model, val_loader, epoch_num, writer)
 
             if performance > best_performance:
                 best_performance = performance
-                save_mode_path = os.path.join(args.snapshot_path, 'iter_{}_dice_{}.pth'.format(iter_num, round(best_performance, 4)))
+                save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch_num, round(best_performance, 4)))
                 save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.model))
                 torch.save(model.state_dict(), save_mode_path)
                 torch.save(model.state_dict(), save_best)
 
-            if iter_num >= args.iteration:
-                break
         if iter_num >= args.iteration:
             iterator.close()
             break
@@ -113,11 +103,13 @@ if __name__ == "__main__":
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.snapshot_path = "./snapshot/{}/".format(args.model)
 
-    if not os.path.exists(args.snapshot_path):
-        os.makedirs(args.snapshot_path)
+    if os.path.exists(args.snapshot_path):
+        shutil.rmtree(args.snapshot_path)
+    os.makedirs(args.snapshot_path)
     
     logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
+    print('--' * 30)
 
     main(args)

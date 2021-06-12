@@ -1,10 +1,10 @@
-from datasets import process_label
-import numpy as np
-from collections import deque
 import os
 import json
-import SimpleITK as sitk
 import shutil
+import numpy as np
+import SimpleITK as sitk
+from collections import deque
+from datasets import process_label
 
 
 def validate_frame(frame, threshold=0.05):
