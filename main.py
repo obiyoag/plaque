@@ -20,8 +20,8 @@ from learning import train, evaluate
 
 def parse_args():
     parser = argparse.ArgumentParser('main')
-    parser.add_argument('--data_path', default='/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/', type=str, help='data path')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
+    parser.add_argument('--remote', default=1, type=int, help="train on remote server? 1 for True, 0 for False")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
@@ -99,6 +99,12 @@ def main(args):
 
 if __name__ == "__main__":
     args = parse_args()
+
+    if args.remote == True:
+        args.data_path = '/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/'
+    else:
+        args.data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
+
     set_seed(args.seed)
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.snapshot_path = "./snapshot/{}/".format(args.model)

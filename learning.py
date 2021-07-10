@@ -59,7 +59,7 @@ def evaluate(args, model, val_loader, epoch_num, writer):
             branches_stenosis_list = []
             branches_label_list = []
 
-            for branch in branches_list:  # 对于每一个branch
+            for branch in branches_list[0]:  # 对于每一个branch
 
                 image, label = branch['image'], branch['label']
                 length = image.size(2) - 2 * pad_len
