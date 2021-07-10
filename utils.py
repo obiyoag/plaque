@@ -160,6 +160,21 @@ def merge_plaque(input_list):
     return result_list
 
 
+def digitize_stenosis(stenosis):
+    """
+    按照frame的狭窄程度，返回一个狭窄程度list
+    0-20没有狭窄，20-50轻度，50-100重度
+    """
+    result = []
+    for frame_stenosis in stenosis:
+        if 0 <= frame_stenosis < 20:
+            result.append(0)
+        elif 20<= frame_stenosis <50:
+            result.append(1)
+        elif frame_stenosis >= 50:
+            result.append(2)
+    return max(result)
+
 def get_branch_stenosis(branch_label):
     """
     从一条branch_label中得到对应的stenosis程度
@@ -167,4 +182,4 @@ def get_branch_stenosis(branch_label):
     branch_stenosis = []
     for seg in branch_label:
         branch_stenosis.extend(seg[2])
-    return max(branch_stenosis)
+    return digitize_stenosis(branch_stenosis)

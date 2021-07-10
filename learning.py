@@ -1,7 +1,7 @@
 import torch
 import logging
 from tqdm import tqdm
-from utils import get_metrics, merge_plaque, get_branch_stenosis
+from utils import get_metrics, merge_plaque, get_branch_stenosis, digitize_stenosis
 
 def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
     model.train()
@@ -11,7 +11,7 @@ def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
         loop.set_description(f'Iter {iter_num}')
 
         image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-        type_output, stenosis_output = model(image, steps=10, device=args.device)
+        type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
 
         type_loss = criterion(type_output, plaque_type)
         stenosis_loss = criterion(stenosis_output, stenosis)
@@ -105,7 +105,7 @@ def evaluate(args, model, val_loader, epoch_num, writer):
 
                 for seg in label:
                     seg_type_label.append(seg[0])
-                    seg_stenosis_label.append(max(seg[2]))
+                    seg_stenosis_label.append(digitize_stenosis(seg[2]))
                     s_idx, e_idx = seg[1][0], seg[1][-1]
                     type_pred = type_record[patient_id][branch_id][s_idx: e_idx]
                     seg_type_pred.append(max(type_pred, key=type_pred.count))

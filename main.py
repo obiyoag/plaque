@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--train_ratio', default=0.70, type=float, help='the training ratio of all data')
     parser.add_argument('--sample_normal_prob', default=0.3, type=float, help='the prob to sample normal segment in a branch if the branch is normal')
     parser.add_argument('--val_time', default=100, type=int, help='the validation times in training')
+    parser.add_argument('--sliding_steps', default=9, type=int, help='the num of sliding cudes along a segment (should be odd)')
     
     return parser.parse_args()
 
@@ -53,7 +54,7 @@ def main(args):
     except IOError:
         print('failed_branches.json not found.')
 
-    train_dataset = Train_Dataset(train_paths, failed_branch_list, args.sample_normal_prob, transform=Data_Augmenter())
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, args.sample_normal_prob, args.seg_len, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
@@ -99,6 +100,9 @@ def main(args):
 
 if __name__ == "__main__":
     args = parse_args()
+
+    assert args.sliding_steps % 2 != 0, print("sliding steps should be odd")
+    args.seg_len = args.sliding_steps * 5 + 20
 
     if args.remote == True:
         args.data_path = '/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/'

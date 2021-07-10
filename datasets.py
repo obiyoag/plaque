@@ -4,7 +4,7 @@ import torch
 import random
 import numpy as np
 import SimpleITK as sitk
-from utils import set_seed, Center_Crop, Data_Augmenter, BalancedSampler
+from utils import set_seed, Center_Crop, Data_Augmenter, BalancedSampler, digitize_stenosis
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -20,23 +20,6 @@ def split_dataset(case_list, train_ratio):
     print('--' * 30)
 
     return train_paths, val_paths
-
-
-def digitize_stenosis(stenosis):
-    """
-    按照frame的狭窄程度，返回一个狭窄程度list
-    0-20没有狭窄，20-50轻度，50-100重度
-    """
-    result = []
-    for frame_stenosis in stenosis:
-        if 0 <= frame_stenosis < 20:
-            result.append(0)
-        elif 20<= frame_stenosis <50:
-            result.append(1)
-        elif frame_stenosis >= 50:
-            result.append(2)
-    return result
-
 
 def process_label(label):  # 消除label中的重复帧，并排序
     """
@@ -58,8 +41,6 @@ def process_label(label):  # 消除label中的重复帧，并排序
             index.append(item[0])
             stenosis.append(item[1])
         
-        stenosis = digitize_stenosis(stenosis)
-
         seg_list.append(index)
         seg_list.append(stenosis)
         return seg_list
@@ -70,7 +51,7 @@ def process_label(label):  # 消除label中的重复帧，并排序
     return label_list
 
 
-def sample_normal(branch_path, avg=15.84, std=11.53, min_len=2, max_len=67, ):  # 这里的统计值是训练集标注的segment的
+def sample_normal(branch_path, avg=15.84, std=11.53, min_len=2, max_len=67):  # 这里的统计值是训练集标注的segment的
     """
     从正常branch中采样出一段正常的segment
     """
@@ -86,7 +67,7 @@ def sample_normal(branch_path, avg=15.84, std=11.53, min_len=2, max_len=67, ):  
     loc = int(np.random.choice(range(0, end_idx), 1))  # 确定segment起始位置
     sampled_idx = list(range(loc, loc + sample_len))
 
-    label_list = [[0, sampled_idx, [0 for _ in range(sample_len)]]]
+    label_list = [[0, sampled_idx, [0.0 for _ in range(sample_len)]]]
 
     return label_list
 
@@ -130,13 +111,14 @@ def get_path2label_dict(case_list, failed_branch_list, sample_normal_prob):
 
 
 class Train_Dataset(Dataset):
-    def __init__(self, paths, failed_branch_list, sample_normal_prob, transform, pad_len=70):
+    def __init__(self, paths, failed_branch_list, sample_normal_prob, seg_len, transform):
+        assert seg_len % 2 != 0, print("the length of segments should be odd")
+        self.seg_len = seg_len
         self.transform = transform
-        self.pad_len = pad_len
         self.path_list = []
         self.type_list = []
-        self.index_list = []
         self.stenosis_list = []
+        self.index_stenosis_list = []
 
         path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, sample_normal_prob)
         for branch_path in list(path2label_dict.keys()):
@@ -144,8 +126,8 @@ class Train_Dataset(Dataset):
             for seg in label:
                 self.path_list.append(branch_path)
                 self.type_list.append(seg[0])
-                self.index_list.append(seg[1])
-                self.stenosis_list.append(max(seg[2]))
+                self.stenosis_list.append(digitize_stenosis(seg[2]))
+                self.index_stenosis_list.append(dict(zip(seg[1], seg[2])))
 
         print('normal seg num in trainset: {}'.format(normal_branch_num))
         print('abnormal seg num in trainset: {}'.format(len(self.path_list) - normal_branch_num))
@@ -156,26 +138,51 @@ class Train_Dataset(Dataset):
         return len(self.path_list)
 
     def __getitem__(self, idx):
-        path, plaque_type, plaque_idx, stenosis = self.path_list[idx], self.type_list[idx], self.index_list[idx], self.stenosis_list[idx]
-        
+        path, plaque_type, index_stenosis_dict = self.path_list[idx], self.type_list[idx], self.index_stenosis_list[idx]
+
         mpr_path = os.path.join(path, 'mpr.nii.gz')
         mpr_itk = sitk.ReadImage(mpr_path)
         image = sitk.GetArrayFromImage(mpr_itk)
-        image = image[plaque_idx[0]: plaque_idx[-1] + 1, :, :]  # 标注中最后一帧也有斑块
-        assert image.shape[0] <= self.pad_len, print('length of the plaque should be less than pad_len')
-        image = self._pad_img(image)
+
+        stenosis = digitize_stenosis(index_stenosis_dict.values())
+        plaque_idx = list(index_stenosis_dict.keys())
+        image_left, image_right = plaque_idx[0], plaque_idx[-1]+1
+
+        if max(index_stenosis_dict) == 0:  # 如果最大狭窄程度为0，说明是正常的血管，center_pos在中间
+            center_pos = plaque_idx[len(plaque_idx) // 2]
+        else:  # 如果最大狭窄程度不为0，说明是有狭窄程度的血管，center_pos在最严重帧的位置
+            center_pos = max(index_stenosis_dict, key=index_stenosis_dict.get)
+        
+        image = image[image_left: image_right, :, :]  # 标注中最后一帧也有斑块
+        image = self._pad_crop_img(image, center_pos, image_left, image_right)
         image = self.transform(image)
     
         return image, plaque_type, stenosis
         
-    def _pad_img(self, image):
+    def _pad_crop_img(self, image, center_pos, image_left, image_right):
         """
-        给segment补零到70帧
+        把图像截取或补充成定长
         """
-        pad_img = np.zeros((self.pad_len, image.shape[1], image.shape[2]))
-        pad_img[0: image.shape[0], :, :] = image
-        pad_img = np.expand_dims(pad_img, axis=0)
-        return pad_img
+        seg_left = center_pos - (self.seg_len - 1) // 2
+        seg_right = center_pos + (self.seg_len - 1) // 2 + 1
+        fixed_len_seg = np.zeros((1, self.seg_len, image.shape[1], image.shape[2]))
+        
+        if seg_left <= image_left and seg_right >= image_right:
+            diff = image_left - seg_left
+            fixed_len_seg[0, diff: diff + image.shape[0], :, :] = image
+        if seg_left >= image_left and seg_right <= image_right:
+            diff = seg_left - image_left
+            fixed_len_seg[0] = image[diff: diff + self.seg_len, :, :]
+        if seg_left >= image_left and seg_right >= image_right:
+            diff = seg_left - image_left
+            common_part = image[diff:, :, :]
+            fixed_len_seg[0, 0: len(common_part), :, :] = common_part
+        if seg_left <= image_left and seg_right <= image_right:
+            diff = image_left - seg_left
+            common_part = image[0: seg_right - image_left, :, :]
+            fixed_len_seg[0, diff: diff + len(common_part), :, :] = common_part
+        
+        return fixed_len_seg
 
 
 class Eval_Dataset(Dataset):
