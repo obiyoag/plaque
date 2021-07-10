@@ -20,7 +20,7 @@ from learning import train, evaluate
 
 def parse_args():
     parser = argparse.ArgumentParser('main')
-    parser.add_argument('--data_path', default='/home/gyb/Datasets/plaque_data_whole_new/', type=str, help='data path')
+    parser.add_argument('--data_path', default='/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/', type=str, help='data path')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -58,7 +58,7 @@ def main(args):
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
     val_dataset = Eval_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.pred_unit, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, collate_fn=lambda x:x)
 
     model = net_factory(args.model).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
