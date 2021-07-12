@@ -134,7 +134,7 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
             batch = []
 
     def __len__(self):
-        return (self.arr_columns // self.num_samples) * 7
+        return self.num_samples
 
     def _shuffle_along_axis(self, a, axis):  # 在指定轴上打乱numpy数组
         idx = np.random.rand(*a.shape).argsort(axis=axis)
