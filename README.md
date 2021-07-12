@@ -22,3 +22,5 @@ rcnn, rcnn-2d, tr_net的实验结果：
 1. 训练时候的pad方式要改，从中间向两边pad
 2. 斑块长度从中间最严重帧crop或pad到二三十帧
 3. 做一个五折交叉验证，更能看出是不是数据集的问题
+
+发现一个bug：在utils.Balanced_Sampler中__len__方法错误，应返回self.num_samples. ————fixed
