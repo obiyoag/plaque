@@ -21,6 +21,7 @@ from learning import train, evaluate
 def parse_args():
     parser = argparse.ArgumentParser('main')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
+    parser.add_argument('--exp_name', default='exp', type=str, help="the name of the experiment")
     parser.add_argument('--remote', default=1, type=int, help="train on remote server? 1 for True, 0 for False")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
@@ -85,7 +86,7 @@ def main(args):
             if performance > best_performance:
                 best_performance = performance
                 save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch_num, round(best_performance, 4)))
-                save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.model))
+                save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.exp_name))
                 torch.save(model.state_dict(), save_mode_path)
                 torch.save(model.state_dict(), save_best)
 
@@ -111,7 +112,7 @@ if __name__ == "__main__":
 
     set_seed(args.seed)
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    args.snapshot_path = "./snapshot/{}/".format(args.model)
+    args.snapshot_path = "./snapshot/{}/".format(args.exp_name)
 
     if os.path.exists(args.snapshot_path):
         shutil.rmtree(args.snapshot_path)
