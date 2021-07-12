@@ -117,7 +117,7 @@ if __name__ == "__main__":
         shutil.rmtree(args.snapshot_path)
     os.makedirs(args.snapshot_path)
     
-    logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+    logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%m/%d, %H:%M')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     print('--' * 30)
