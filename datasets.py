@@ -263,7 +263,7 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
+    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
@@ -281,17 +281,21 @@ if __name__ == "__main__":
         print('failed_branches.json not found.')
 
     #  调试Train_Dataset
-    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=Data_Augmenter(prob=1))
-    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 360, 120)
-    train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
-    for idx, (image, plaque_type, stenosis) in enumerate(train_loader):
-        print(idx)
-        # break
+    import matplotlib.pyplot as plt
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=Data_Augmenter(prob=1), seg_len=65)
+    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 480, 120)
+    image, type, stenosis = train_dataset[0]
+    image = image[0]
+    print(image.shape)
+    for idx in range(len(image)):
+        plt.plot(image[idx])
+        plt.show()
+        break
 
     #  调试Eval_Dataset
-    val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
+    # val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
+    # val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
     
-    for idx, branches_list in enumerate(val_loader):
-        if len(branches_list) == 0:
-            print(idx)
+    # for idx, branches_list in enumerate(val_loader):
+    #     if len(branches_list) == 0:
+    #         print(idx)
