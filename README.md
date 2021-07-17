@@ -24,3 +24,13 @@ rcnn, rcnn-2d, tr_net的实验结果：
 3. 做一个五折交叉验证，更能看出是不是数据集的问题
 
 发现一个bug：在utils.Balanced_Sampler中__len__方法错误，应返回self.num_samples. ————fixed
+
+改完之后反而在performance上更差了：
+|Segment-level|rcnn|center_pad|
+|:--:|:--:|:--:|
+|best_epoch|52|10|
+|performance|72.11|68.39|
+|type_acc|74.92|77.62|
+|type_f1|32.37|37.81|
+|stenosis_acc|69.31|59.15|
+|stenosis_f1|47.38|34.95|
