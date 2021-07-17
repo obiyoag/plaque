@@ -152,7 +152,6 @@ class Train_Dataset(Dataset):
             center_pos = plaque_idx[len(plaque_idx) // 2]
         else:  # 如果最大狭窄程度不为0，说明是有狭窄程度的血管，center_pos在最严重帧的位置
             center_pos = max(index_stenosis_dict, key=index_stenosis_dict.get)
-        
         image = image[image_left: image_right, :, :]  # 标注中最后一帧也有斑块
         image = self._pad_crop_img(image, center_pos, image_left, image_right)
         image = self.transform(image)
@@ -284,13 +283,16 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=Data_Augmenter(prob=1), seg_len=65)
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 480, 120)
-    image, type, stenosis = train_dataset[0]
+    image, type, stenosis = train_dataset[14]
     image = image[0]
     print(image.shape)
-    for idx in range(len(image)):
-        plt.plot(image[idx])
+    print(type)
+    print(stenosis)
+    for idx in range(29, 35):
+        plt.imshow(image[idx], cmap="gray")
         plt.show()
-        break
+        if idx == 10:
+            break
 
     #  调试Eval_Dataset
     # val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
