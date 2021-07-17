@@ -295,9 +295,9 @@ if __name__ == "__main__":
             break
 
     #  调试Eval_Dataset
-    # val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
-    # val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
+    val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
+    val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
     
-    # for idx, branches_list in enumerate(val_loader):
-    #     if len(branches_list) == 0:
-    #         print(idx)
+    for idx, branches_list in enumerate(val_loader):
+        if len(branches_list) == 0:
+            print(idx)

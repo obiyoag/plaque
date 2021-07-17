@@ -150,12 +150,12 @@ def merge_plaque(input_list):
             if len(zero_list) <= 2:
                 for i in range(len(zero_list)):
                     result_list.append(item)
-                zero_list.clear()
-            result_list.append(item)
-        if item == 0:
-            zero_list.append(item)
-            if len(zero_list) >2:
+            else:
                 result_list.extend(zero_list)
+            zero_list.clear()
+            result_list.append(item)
+        else:
+            zero_list.append(item)
 
     return result_list
 
