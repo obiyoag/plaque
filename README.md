@@ -34,3 +34,9 @@ rcnn, rcnn-2d, tr_net的实验结果：
 |type_f1|32.37|37.81|
 |stenosis_acc|69.31|59.15|
 |stenosis_f1|47.38|34.95|
+
+用训练好的网络，对测试集的branch进行推断，发现type和stenosis的结果绝大多数都不为零。甚至在训练集上推断也是这样，loss曲线是下降的，所以很奇怪。  
+可能是正常的branch采样太少的原因？打算加大sample_prob。
+
+发现一个bug：utils.merge_plaque逻辑错误(和上面的错误没有太大关系). ————fixed
+
