@@ -22,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser('main')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--exp_name', default='exp', type=str, help="the name of the experiment")
-    parser.add_argument('--remote', default=1, type=int, help="train on remote server? 1 for True, 0 for False")
+    parser.add_argument('--machine', default='server', type=str, help="the machine for training")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
@@ -105,10 +105,14 @@ if __name__ == "__main__":
     assert args.sliding_steps % 2 != 0, print("sliding steps should be odd")
     args.seg_len = args.sliding_steps * 5 + 20
 
-    if args.remote == True:
+    if args.machine == 'server':
         args.data_path = '/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/'
-    else:
+    elif args.machine == 'pc':
         args.data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
+    elif args.machine == 'laptop':
+        args.data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
+    else:
+        raise NotImplementedError
 
     set_seed(args.seed)
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

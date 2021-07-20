@@ -113,9 +113,9 @@ class BalancedSampler(Sampler):  # 每次采样包含两个mini-batch，一个�
         self.stenosis_arr = np.zeros((len(stenosis_unique), self.arr_columns), dtype=np.int)
 
         for i in type_unique:
-            self.type_arr[i] = np.tile(np.where(np.array(type_list) == i)[0], 20)[:self.arr_columns]  # 找到对应label在列表中的位置，并复制到最大频率，放入数组
+            self.type_arr[i] = np.tile(np.where(np.array(type_list) == i)[0], 100)[:self.arr_columns]  # 找到对应label在列表中的位置，并复制到最大频率，放入数组
         for i in stenosis_unique:
-            self.stenosis_arr[i] = np.tile(np.where(np.array(stenosis_list) == i)[0], 3)[:self.arr_columns]
+            self.stenosis_arr[i] = np.tile(np.where(np.array(stenosis_list) == i)[0], 100)[:self.arr_columns]
 
     def __iter__(self):
         type_arr = self._shuffle_along_axis(self.type_arr, axis=1)
@@ -150,12 +150,12 @@ def merge_plaque(input_list):
             if len(zero_list) <= 2:
                 for i in range(len(zero_list)):
                     result_list.append(item)
-                zero_list.clear()
-            result_list.append(item)
-        if item == 0:
-            zero_list.append(item)
-            if len(zero_list) >2:
+            else:
                 result_list.extend(zero_list)
+            zero_list.clear()
+            result_list.append(item)
+        else:
+            zero_list.append(item)
 
     return result_list
 
