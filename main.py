@@ -59,8 +59,8 @@ def main(args):
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
     train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
 
-    val_dataset = Eval_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.pred_unit, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, collate_fn=lambda x:x)
+    val_dataset = Train_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.seg_len, transform=Center_Crop())
+    val_loader = DataLoader(val_dataset, batch_size=21, shuffle=False)
 
     model = net_factory(args.model).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
