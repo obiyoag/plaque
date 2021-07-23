@@ -5,6 +5,10 @@ from utils import get_metrics, merge_plaque, get_branch_stenosis, digitize_steno
 
 def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
     model.train()
+    type_pred_list = []
+    type_label_list = []
+    stenosis_pred_list = []
+    stenosis_label_list = []
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False, unit='iter')
     for i_batch, (image, plaque_type, stenosis) in loop:
 
@@ -12,6 +16,11 @@ def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
 
         image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
         type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
+
+        type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
+        stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
+        type_label_list.extend(plaque_type.tolist())
+        stenosis_label_list.extend(stenosis.tolist())
 
         type_loss = criterion(type_output, plaque_type)
         stenosis_loss = criterion(stenosis_output, stenosis)
@@ -38,8 +47,25 @@ def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
 
         if i_batch == len(train_loader) or iter_num >= args.iteration:
             break
-
     loop.close()
+    
+    type_acc, type_f1 = get_metrics(type_label_list, type_pred_list)
+    stenosis_acc, stenosis_f1 = get_metrics(stenosis_label_list, stenosis_pred_list)
+    for i in range(len(type_acc)):
+        writer.add_scalar('train/type_{}_acc'.format(i), type_acc[i], iter_num)
+        writer.add_scalar('train/type_{}_f1'.format(i), type_f1[i], iter_num)
+    for i in range(len(stenosis_acc)):
+        writer.add_scalar('train/stenosis_{}_acc'.format(i), stenosis_acc[i], iter_num)
+        writer.add_scalar('train/stenosis_{}_f1'.format(i), stenosis_f1[i], iter_num)
+    performance = (type_acc.mean() + stenosis_acc.mean()) / 2
+    writer.add_scalar('train/performance', performance, iter_num)
+    writer.add_scalar('train/type_mean_acc', type_acc.mean(), iter_num)
+    writer.add_scalar('train/type_mean_f1', type_f1.mean(), iter_num)
+    writer.add_scalar('train/stenosis_mean_acc', stenosis_acc.mean(), iter_num)
+    writer.add_scalar('train/stenosis_mean_f1', stenosis_f1.mean(), iter_num)
+    print('\n')
+    logging.info('training: performance: %.2f, acc_type: %.2f, f1_type: %.2f, acc_stenosis: %.2f, f1_stenosis: %.2f' %(performance, type_acc.mean(), type_f1.mean(), stenosis_acc.mean(), stenosis_f1.mean()))
+
     return iter_num
 
 
@@ -70,8 +96,8 @@ def evaluate(args, model, val_loader, epoch_num, writer):
 
                     input = image[:, :, i: i + args.pred_unit, :, :].float().to(args.device)
                     type_output, stenosis_output = model(input, steps=5, device=args.device)
-                    tmp_type_list.append(torch.max(torch.softmax(type_output, dim=1), dim=1)[1].item())
-                    tmp_stenosis_list.append(torch.max(torch.softmax(stenosis_output, dim=1), dim=1)[1].item())
+                    tmp_type_list.append(torch.argmax(torch.softmax(type_output, dim=1)).item())
+                    tmp_stenosis_list.append(torch.argmax(torch.softmax(stenosis_output, dim=1)).item())
 
                 tmp_type_list = merge_plaque(tmp_type_list)
                 branches_type_list.append(tmp_type_list)

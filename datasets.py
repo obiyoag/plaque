@@ -262,7 +262,7 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
+    data_path = '/home/gyb/Datasets/plaque_data_whole/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
@@ -296,8 +296,7 @@ if __name__ == "__main__":
 
     #  调试Eval_Dataset
     val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=None, shuffle=False, collate_fn=lambda x:x)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, collate_fn=lambda x:x)
     
     for idx, branches_list in enumerate(val_loader):
-        if len(branches_list) == 0:
-            print(idx)
+        pass

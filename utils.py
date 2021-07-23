@@ -157,6 +157,10 @@ def merge_plaque(input_list):
         else:
             zero_list.append(item)
 
+    if len(zero_list) != 0:
+        result_list.extend(zero_list)
+
+    assert len(result_list) == len(input_list), print("plaque merge error")
     return result_list
 
 
