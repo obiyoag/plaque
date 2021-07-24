@@ -26,8 +26,8 @@ def parse_args():
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
-    parser.add_argument('--arr_columns', default=360, type=int, help='num of cols in balanced matrix')
-    parser.add_argument('--num_samples', default=120, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
+    parser.add_argument('--arr_columns', default=450, type=int, help='num of cols in balanced matrix')
+    parser.add_argument('--num_samples', default=150, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
     parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--sample_normal_prob', default=0.3, type=float, help='the prob to sample normal segment in a branch if the branch is normal')
     parser.add_argument('--val_time', default=100, type=int, help='the validation times in training')
     parser.add_argument('--sliding_steps', default=9, type=int, help='the num of sliding cudes along a segment (should be odd)')
+    parser.add_argument('--fold_idx', default=None, type=int, help='idx of fold for 4-fold validation')
     
     return parser.parse_args()
 
@@ -44,7 +45,7 @@ def main(args):
     case_list = [os.path.join(args.data_path, case) for case in case_list]
     logging.info('total case num: ' + str(len(case_list)))
 
-    train_paths, val_paths = split_dataset(case_list, args.train_ratio)
+    train_paths, val_paths = split_dataset(args, case_list)
 
     try:
         with open('failed_branches.json', 'r') as f:

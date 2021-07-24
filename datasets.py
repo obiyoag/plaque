@@ -8,12 +8,22 @@ from utils import set_seed, Center_Crop, Data_Augmenter, BalancedSampler, digiti
 from torch.utils.data import Dataset, DataLoader
 
 
-def split_dataset(case_list, train_ratio):
+def split_dataset(args, case_list):
     random.shuffle(case_list)
-    case_num = len(case_list)
-    train_num = int(case_num * train_ratio)
-    train_paths = case_list[:train_num]
-    val_paths = case_list[train_num:]
+    if args.fold_idx is None:
+        case_num = len(case_list)
+        train_num = int(case_num * args.train_ratio)
+        train_paths = case_list[:train_num]
+        val_paths = case_list[train_num:]
+    else:
+        fold_list = [[] for i in range(4)]
+        for idx, case_path in enumerate(case_list):
+            fold_list[idx % 4].append(case_path)
+        val_paths = fold_list[args.fold_idx]
+        train_paths = []
+        for idx, fold in enumerate(fold_list):
+            if idx != args.fold_idx:
+                train_paths.extend(fold)
 
     print('case num in train_paths: {}'.format(len(train_paths)))
     print('case num in val_paths: {}'.format(len(val_paths)))
