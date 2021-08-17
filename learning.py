@@ -1,7 +1,7 @@
 import torch
 import logging
 from tqdm import tqdm
-from utils import get_metrics, merge_plaque, get_branch_stenosis, digitize_stenosis
+from utils import get_metrics
 
 def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
     model.train()

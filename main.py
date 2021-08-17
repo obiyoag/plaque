@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from networks.net_factory import net_factory
 from utils import set_seed, Data_Augmenter, Center_Crop, BalancedSampler
-from datasets import split_dataset, Train_Dataset, Eval_Dataset
+from datasets import split_dataset, Train_Dataset
 from learning import train, evaluate
 
 
