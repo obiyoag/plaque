@@ -171,7 +171,7 @@ def digitize_stenosis(stenosis):
     """
     result = []
     for frame_stenosis in stenosis:
-        if 0 <= frame_stenosis < 20:
+        if frame_stenosis < 20:
             result.append(0)
         elif 20<= frame_stenosis <50:
             result.append(1)
@@ -187,3 +187,76 @@ def get_branch_stenosis(branch_label):
     for seg in branch_label:
         branch_stenosis.extend(seg[2])
     return digitize_stenosis(branch_stenosis)
+
+def deduplicate_sort_seg(seg):
+    """
+    消除label中的重复帧并排序
+    """
+    seg_list = list()
+    seg_list.append(seg[0] - 1)
+
+    index, stenosis = seg[1], seg[2]
+    sort_list = list()
+    for i in range(len(index)):
+        sort_list.append((index[i], stenosis[i]))
+    sort_list = sorted(list(set(sort_list)))
+
+    index = list()
+    stenosis =list()
+    for item in sort_list:
+        index.append(item[0])
+        stenosis.append(item[1])
+    
+    seg_list.append(index)
+    seg_list.append(stenosis)
+    return seg_list
+
+
+def get_bounds(label, seg_len):
+    """
+    1. 通过label得到应该从图像中截取的boundary(考虑斑块有重叠的情况)
+    2. 取一段seg中frames最大的stenosis作为整个seg的stenosis
+    """
+    index_stenosis_list = []
+    max_pos_list = []
+    seg_boundary_list = []
+    for seg in label:
+        index_stenosis_list.append(dict(zip(seg[1], seg[2])))
+    for index_stenosis_dict in index_stenosis_list:
+        max_pos = max(index_stenosis_dict, key=index_stenosis_dict.get)
+        max_pos_list.append(max_pos)
+    
+    seg_boundary_list.append(max_pos_list[0] - seg_len//2)  # 第一个seg左边界按理想取，长度不够后面再说
+    
+    for idx in range(len(max_pos_list) - 1):
+        first_max = max_pos_list[idx]
+        second_max = max_pos_list[idx + 1]
+        max_gap = second_max - first_max
+        if max_gap >= seg_len:  # 斑块之间没有重叠
+            seg_boundary_list.append(first_max + seg_len//2)
+            seg_boundary_list.append(second_max - seg_len//2)
+        else:  # 斑块之间有重叠
+            seg_boundary_list.append((first_max + second_max) // 2)
+            seg_boundary_list.append((first_max + second_max) // 2)
+    
+    seg_boundary_list.append(max_pos_list[-1] + seg_len//2)  # 最后一个seg右边界按理想取，长度不够后面再说
+
+    assert len(seg_boundary_list) % 2 == 0, print('Boundary Error!')
+
+    bound_list = []
+    for left_bound, center_pos, right_bounnd in zip(seg_boundary_list[::2], max_pos_list, seg_boundary_list[1::2]):
+        bound_list.append([left_bound, center_pos, right_bounnd])
+    
+    new_label = []
+    for seg, bounds in zip(label, bound_list):
+        new_label.append([seg[0], digitize_stenosis(seg[2]), bounds])
+    
+    return new_label
+
+def process_label(label, seg_len):
+    label_list = list()
+    for seg in label:
+        label_list.append(deduplicate_sort_seg(seg))
+    label_list = sorted(label_list, key=lambda x: x[1])  # 按照index从小到大排列seg
+    label_list = get_bounds(label_list, seg_len)
+    return label_list

@@ -4,16 +4,26 @@ import torch
 import random
 import numpy as np
 import SimpleITK as sitk
-from utils import set_seed, Center_Crop, Data_Augmenter, BalancedSampler, digitize_stenosis
 from torch.utils.data import Dataset, DataLoader
+from utils import set_seed, process_label
 
 
-def split_dataset(case_list, train_ratio):
+def split_dataset(args, case_list):
     random.shuffle(case_list)
-    case_num = len(case_list)
-    train_num = int(case_num * train_ratio)
-    train_paths = case_list[:train_num]
-    val_paths = case_list[train_num:]
+    if args.fold_idx is None:
+        case_num = len(case_list)
+        train_num = int(case_num * args.train_ratio)
+        train_paths = case_list[:train_num]
+        val_paths = case_list[train_num:]
+    else:
+        fold_list = [[] for i in range(4)]
+        for idx, case_path in enumerate(case_list):
+            fold_list[idx % 4].append(case_path)
+        val_paths = fold_list[args.fold_idx]
+        train_paths = []
+        for idx, fold in enumerate(fold_list):
+            if idx != args.fold_idx:
+                train_paths.extend(fold)
 
     print('case num in train_paths: {}'.format(len(train_paths)))
     print('case num in val_paths: {}'.format(len(val_paths)))
@@ -21,37 +31,8 @@ def split_dataset(case_list, train_ratio):
 
     return train_paths, val_paths
 
-def process_label(label):  # 消除label中的重复帧，并排序
-    """
-    消除label中的重复帧并排序
-    """
-    def process_one_seg(seg):
-        seg_list = list()
-        seg_list.append(seg[0] - 1)
 
-        index, stenosis = seg[1], seg[2]
-        sort_list = list()
-        for i in range(len(index)):
-            sort_list.append((index[i], stenosis[i]))
-        sort_list = sorted(list(set(sort_list)))
-
-        index = list()
-        stenosis =list()
-        for item in sort_list:
-            index.append(item[0])
-            stenosis.append(item[1])
-        
-        seg_list.append(index)
-        seg_list.append(stenosis)
-        return seg_list
-
-    label_list = list()
-    for seg in label:
-        label_list.append(process_one_seg(seg))
-    return label_list
-
-
-def sample_normal(branch_path, avg=15.84, std=11.53, min_len=2, max_len=67):  # 这里的统计值是训练集标注的segment的
+def sample_normal(branch_path, seg_len):
     """
     从正常branch中采样出一段正常的segment
     """
@@ -60,19 +41,16 @@ def sample_normal(branch_path, avg=15.84, std=11.53, min_len=2, max_len=67):  # 
     mpr_vol = sitk.GetArrayFromImage(mpr_itk)
     img_len = len(mpr_vol)
 
-    max_len = min(max_len, img_len)  # segment的最大值取mask_len和max_len中小的一个
-    sample_len = int(np.clip(np.random.normal(avg, std), min_len, max_len))  # 用正态分布采样得到segment长度
+    center_pos = int(np.random.choice(range(0, img_len), 1))
+    left_bound = center_pos - seg_len//2
+    right_bound = center_pos + seg_len//2 + 1
 
-    end_idx = (img_len - sample_len) if (img_len - sample_len != 0) else 1
-    loc = int(np.random.choice(range(0, end_idx), 1))  # 确定segment起始位置
-    sampled_idx = list(range(loc, loc + sample_len))
-
-    label_list = [[0, sampled_idx, [0.0 for _ in range(sample_len)]]]
+    label_list = [[0, 0, [left_bound, center_pos, right_bound]]]
 
     return label_list
 
 
-def get_path2label_dict(case_list, failed_branch_list, sample_normal_prob):
+def get_path2label_dict(case_list, failed_branch_list, sample_normal_prob, seg_len):
     """
     得到一个地址到label的映射字典，key为地址，value为label
     """
@@ -94,11 +72,11 @@ def get_path2label_dict(case_list, failed_branch_list, sample_normal_prob):
                 with open(json_path, 'r') as f:
                     dict = json.load(f)
                     if len(dict['plaques']) != 0:  # 如果相应branch不是正常的，则得到segmentlabel
-                        path2label_dict[branch_path] = process_label(dict['plaques'])
+                        path2label_dict[branch_path] = process_label(dict['plaques'], seg_len)
                         abnormal_branch_num += 1
                     else:  # 如果相应branch是正常的，则有概率在branch中sample一段正常的segment
                         if random.uniform(0, 1) < sample_normal_prob:
-                            path2label_dict[branch_path] = sample_normal(branch_path)
+                            path2label_dict[branch_path] = sample_normal(branch_path, seg_len)
                             normal_branch_num += 1
             except IOError:
                 print("plaque json file not found.")
@@ -118,16 +96,16 @@ class Train_Dataset(Dataset):
         self.path_list = []
         self.type_list = []
         self.stenosis_list = []
-        self.index_stenosis_list = []
+        self.bound_list = []
 
-        path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, sample_normal_prob)
+        path2label_dict, normal_branch_num = get_path2label_dict(paths, failed_branch_list, sample_normal_prob, seg_len)
         for branch_path in list(path2label_dict.keys()):
             label = path2label_dict[branch_path]
             for seg in label:
                 self.path_list.append(branch_path)
                 self.type_list.append(seg[0])
-                self.stenosis_list.append(digitize_stenosis(seg[2]))
-                self.index_stenosis_list.append(dict(zip(seg[1], seg[2])))
+                self.stenosis_list.append(seg[1])
+                self.bound_list.append(seg[2])
 
         print('normal seg num in trainset: {}'.format(normal_branch_num))
         print('abnormal seg num in trainset: {}'.format(len(self.path_list) - normal_branch_num))
@@ -138,50 +116,47 @@ class Train_Dataset(Dataset):
         return len(self.path_list)
 
     def __getitem__(self, idx):
-        path, plaque_type, index_stenosis_dict = self.path_list[idx], self.type_list[idx], self.index_stenosis_list[idx]
+        path, plaque_type, stenosis, bounds = self.path_list[idx], self.type_list[idx], self.stenosis_list[idx], self.bound_list[idx]
 
         mpr_path = os.path.join(path, 'mpr.nii.gz')
         mpr_itk = sitk.ReadImage(mpr_path)
         image = sitk.GetArrayFromImage(mpr_itk)
 
-        stenosis = digitize_stenosis(index_stenosis_dict.values())
-        plaque_idx = list(index_stenosis_dict.keys())
-        image_left, image_right = plaque_idx[0], plaque_idx[-1]+1
-
-        if max(index_stenosis_dict) == 0:  # 如果最大狭窄程度为0，说明是正常的血管，center_pos在中间
-            center_pos = plaque_idx[len(plaque_idx) // 2]
-        else:  # 如果最大狭窄程度不为0，说明是有狭窄程度的血管，center_pos在最严重帧的位置
-            center_pos = max(index_stenosis_dict, key=index_stenosis_dict.get)
-        image = image[image_left: image_right, :, :]  # 标注中最后一帧也有斑块
-        image = self._pad_crop_img(image, center_pos, image_left, image_right)
+        image = self._crop_pad_img(image, bounds)
         image = self.transform(image)
     
         return image, plaque_type, stenosis
         
-    def _pad_crop_img(self, image, center_pos, image_left, image_right):
+    def _crop_pad_img(self, image, bounds):
         """
         把图像截取或补充成定长
         """
-        seg_left = center_pos - (self.seg_len - 1) // 2
-        seg_right = center_pos + (self.seg_len - 1) // 2 + 1
-        fixed_len_seg = np.zeros((1, self.seg_len, image.shape[1], image.shape[2]))
-        
-        if seg_left <= image_left and seg_right >= image_right:
-            diff = image_left - seg_left
-            fixed_len_seg[0, diff: diff + image.shape[0], :, :] = image
-        if seg_left >= image_left and seg_right <= image_right:
-            diff = seg_left - image_left
-            fixed_len_seg[0] = image[diff: diff + self.seg_len, :, :]
-        if seg_left >= image_left and seg_right >= image_right:
-            diff = seg_left - image_left
-            common_part = image[diff:, :, :]
-            fixed_len_seg[0, 0: len(common_part), :, :] = common_part
-        if seg_left <= image_left and seg_right <= image_right:
-            diff = image_left - seg_left
-            common_part = image[0: seg_right - image_left, :, :]
-            fixed_len_seg[0, diff: diff + len(common_part), :, :] = common_part
-        
-        return fixed_len_seg
+        left_bound, center_pos, right_bound = bounds
+        left_bound = max(0, left_bound)
+        right_bound = min(right_bound, len(image) - 1)
+        image = torch.from_numpy(image[left_bound: right_bound + 1]).double()
+
+        left_len = center_pos - left_bound
+        right_len = right_bound - center_pos
+
+        if left_len == 0:
+            left_pad = min(len(image) - 1, self.seg_len//2)
+            image = torch.nn.functional.pad(image.transpose(2, 0), (left_pad, 0), mode="reflect").transpose(2, 0)
+            left_len = left_pad
+        if right_len == 0:
+            right_pad = min(len(image) - 1, self.seg_len//2)
+            image = torch.nn.functional.pad(image.transpose(2, 0), (right_pad, 0), mode="reflect").transpose(2, 0)
+            right_len = right_pad
+
+        while(len(image) != self.seg_len):
+            left_pad = min(left_len, self.seg_len//2 - left_len)
+            right_pad = min(right_len, self.seg_len//2 - right_len)
+
+            image = torch.nn.functional.pad(image.transpose(2, 0), (left_pad, right_pad), mode="reflect").transpose(2, 0)
+            left_len, right_len = left_len + left_pad, right_len + right_pad
+
+        assert len(image) == self.seg_len, print('crop or pad failed')
+        return np.array(image.unsqueeze(0))
 
 
 class Eval_Dataset(Dataset):
@@ -262,7 +237,7 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/home/gyb/Datasets/plaque_data_whole/'
+    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
@@ -281,22 +256,12 @@ if __name__ == "__main__":
 
     #  调试Train_Dataset
     import matplotlib.pyplot as plt
-    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=Data_Augmenter(prob=1), seg_len=65)
-    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 480, 120)
-    image, type, stenosis = train_dataset[14]
-    image = image[0]
-    print(image.shape)
-    print(type)
-    print(stenosis)
-    for idx in range(29, 35):
-        plt.imshow(image[idx], cmap="gray")
-        plt.show()
-        if idx == 10:
-            break
+    from torchvision.utils import make_grid
 
-    #  调试Eval_Dataset
-    val_dataset = Eval_Dataset(val_paths, failed_branch_list, 0.3, 45, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, collate_fn=lambda x:x)
-    
-    for idx, branches_list in enumerate(val_loader):
-        pass
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=lambda x: x, seg_len=65)
+    dataloader = DataLoader(train_dataset, 32)
+    for idx, (image, type, stenosis) in enumerate(dataloader):
+        image = image[0].squeeze()
+        plt.imshow(make_grid(image.unsqueeze(1)).transpose(2, 0))
+        plt.show()
+        break
