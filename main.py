@@ -107,7 +107,7 @@ if __name__ == "__main__":
     args.seg_len = args.sliding_steps * 5 + 20
 
     if args.machine == 'server':
-        args.data_path = '/mnt/lustre/wanghuan3/gaoyibo/Datasets/plaque_data_whole_new/'
+        args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
     elif args.machine == 'pc':
         args.data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
     elif args.machine == 'laptop':
