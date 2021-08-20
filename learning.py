@@ -39,9 +39,11 @@ def train(args, model, train_loader, criterion, optimizer, iter_num, writer):
 
         iter_num  = iter_num + 1
         type_loss, stenosis_loss, loss = round(type_loss.item(), 4), round(stenosis_loss.item(), 4), round(loss.item(), 4)
-        writer.add_scalar('train/total_loss', loss, iter_num)
-        writer.add_scalar('train/type_loss', type_loss, iter_num)
-        writer.add_scalar('train/stenosis_loss', stenosis_loss, iter_num)
+
+        if iter_num % 50 == 0:
+            writer.add_scalar('train/total_loss', loss, iter_num)
+            writer.add_scalar('train/type_loss', type_loss, iter_num)
+            writer.add_scalar('train/stenosis_loss', stenosis_loss, iter_num)
 
         loop.set_postfix(total_loss=loss, type_loss=type_loss, stenosis_loss=stenosis_loss)
 

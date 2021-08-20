@@ -36,6 +36,8 @@ def parse_args():
     parser.add_argument('--val_time', default=100, type=int, help='the validation times in training')
     parser.add_argument('--sliding_steps', default=9, type=int, help='the num of sliding cudes along a segment (should be odd)')
     parser.add_argument('--fold_idx', default=None, type=int, help="idx of fold for 4 fold validation")
+    parser.add_argument('--num_workers', default=0, type=int, help="num of workers in dataloader")
+    parser.add_argument('--pin_memory', default=None, help="use pin_memory or not")
     
     return parser.parse_args()
 
@@ -45,7 +47,7 @@ def main(args):
     case_list = [os.path.join(args.data_path, case) for case in case_list]
     logging.info('total case num: ' + str(len(case_list)))
 
-    train_paths, val_paths = split_dataset(args, case_list)
+    train_paths, val_paths = split_dataset(case_list, args.fold_idx, args.train_ratio)
 
     try:
         with open('failed_branches.json', 'r') as f:
@@ -58,10 +60,10 @@ def main(args):
 
     train_dataset = Train_Dataset(train_paths, failed_branch_list, args.sample_normal_prob, args.seg_len, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, args.arr_columns, args.num_samples)
-    train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler)
+    train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, pin_memory=args.pin_memory, num_workers=args.num_workers)
 
     val_dataset = Train_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.seg_len, transform=Center_Crop())
-    val_loader = DataLoader(val_dataset, batch_size=21, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=21, shuffle=False, pin_memory=args.pin_memory, num_workers=args.num_workers)
 
     model = net_factory(args.model).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -109,9 +111,13 @@ if __name__ == "__main__":
     if args.machine == 'server':
         args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
     elif args.machine == 'pc':
-        args.data_path = '/home/gyb/Datasets/plaque_data_whole_new/'
+        args.data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
+        args.pin_menory = False
+        args.num_workers = 15
     elif args.machine == 'laptop':
         args.data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
+        args.pin_menory = False
+        args.num_workers = 0
     else:
         raise NotImplementedError
 
