@@ -6,23 +6,24 @@ import numpy as np
 import SimpleITK as sitk
 from torch.utils.data import Dataset, DataLoader
 from utils import set_seed, process_label
+from torch.nn.functional import pad
 
 
-def split_dataset(args, case_list):
+def split_dataset(case_list, fold_idx, train_ratio):
     random.shuffle(case_list)
-    if args.fold_idx is None:
+    if fold_idx is None:
         case_num = len(case_list)
-        train_num = int(case_num * args.train_ratio)
+        train_num = int(case_num * train_ratio)
         train_paths = case_list[:train_num]
         val_paths = case_list[train_num:]
     else:
         fold_list = [[] for i in range(4)]
         for idx, case_path in enumerate(case_list):
             fold_list[idx % 4].append(case_path)
-        val_paths = fold_list[args.fold_idx]
+        val_paths = fold_list[fold_idx]
         train_paths = []
         for idx, fold in enumerate(fold_list):
-            if idx != args.fold_idx:
+            if idx != fold_idx:
                 train_paths.extend(fold)
 
     print('case num in train_paths: {}'.format(len(train_paths)))
@@ -117,7 +118,6 @@ class Train_Dataset(Dataset):
 
     def __getitem__(self, idx):
         path, plaque_type, stenosis, bounds = self.path_list[idx], self.type_list[idx], self.stenosis_list[idx], self.bound_list[idx]
-
         mpr_path = os.path.join(path, 'mpr.nii.gz')
         mpr_itk = sitk.ReadImage(mpr_path)
         image = sitk.GetArrayFromImage(mpr_itk)
@@ -141,18 +141,18 @@ class Train_Dataset(Dataset):
 
         if left_len == 0:
             left_pad = min(len(image) - 1, self.seg_len//2)
-            image = torch.nn.functional.pad(image.transpose(2, 0), (left_pad, 0), mode="reflect").transpose(2, 0)
+            image = pad(image.transpose(2, 0), (left_pad, 0), mode="reflect").transpose(2, 0)
             left_len = left_pad
         if right_len == 0:
             right_pad = min(len(image) - 1, self.seg_len//2)
-            image = torch.nn.functional.pad(image.transpose(2, 0), (right_pad, 0), mode="reflect").transpose(2, 0)
+            image = pad(image.transpose(2, 0), (right_pad, 0), mode="reflect").transpose(2, 0)
             right_len = right_pad
 
         while(len(image) != self.seg_len):
             left_pad = min(left_len, self.seg_len//2 - left_len)
             right_pad = min(right_len, self.seg_len//2 - right_len)
 
-            image = torch.nn.functional.pad(image.transpose(2, 0), (left_pad, right_pad), mode="reflect").transpose(2, 0)
+            image = pad(image.transpose(2, 0), (left_pad, right_pad), mode="reflect").transpose(2, 0)
             left_len, right_len = left_len + left_pad, right_len + right_pad
 
         assert len(image) == self.seg_len, print('crop or pad failed')
@@ -237,14 +237,14 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole/'
+    data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))  # 病例列表
     case_list = [os.path.join(data_path, case) for case in case_list]
     print('total case num: ' + str(len(case_list)))
 
-    train_paths, val_paths = split_dataset(case_list, train_ratio=0.7)
+    train_paths, val_paths = split_dataset(case_list, None, 0.7)
 
     try:
         with open('failed_branches.json', 'r') as f:
@@ -253,15 +253,19 @@ if __name__ == "__main__":
             print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
     except IOError:
         print('failed_branches.json not found.')
+    
+    from utils import Data_Augmenter, BalancedSampler
+    import time
+    from tqdm import tqdm
 
-    #  调试Train_Dataset
-    import matplotlib.pyplot as plt
-    from torchvision.utils import make_grid
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 65, transform=Data_Augmenter())
+    balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 360, 120)
 
-    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, transform=lambda x: x, seg_len=65)
-    dataloader = DataLoader(train_dataset, 32)
-    for idx, (image, type, stenosis) in enumerate(dataloader):
-        image = image[0].squeeze()
-        plt.imshow(make_grid(image.unsqueeze(1)).transpose(2, 0))
-        plt.show()
-        break
+    for num_workers in range(0,50,5):  # 遍历worker数
+        kwargs = {'num_workers': num_workers, 'pin_memory': True}
+        train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, **kwargs)
+        start = time.time()
+        for idx, (image, type, stenosis) in tqdm(enumerate(train_loader), total=len(train_loader)):
+            pass
+        end = time.time()
+        print("Finish with:{} second, num_workers={}".format(end-start,num_workers))
