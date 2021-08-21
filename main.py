@@ -110,6 +110,10 @@ if __name__ == "__main__":
 
     if args.machine == 'server':
         args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
+        args.pin_memory = False
+        args.num_workers = 10
+        args.arr_columns = 480
+        args.num_samples = 120
     elif args.machine == 'pc':
         args.data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False

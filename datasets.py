@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import json
 import torch
@@ -237,10 +238,10 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
+    data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
-    case_list = sorted(os.listdir(data_path))  # 病例列表
+    case_list = sorted(os.listdir(data_path))
     case_list = [os.path.join(data_path, case) for case in case_list]
     print('total case num: ' + str(len(case_list)))
 
@@ -249,7 +250,7 @@ if __name__ == "__main__":
     try:
         with open('failed_branches.json', 'r') as f:
             json_dict = json.load(f)
-            failed_branch_list = json_dict['failed_branches']  # 没有通过检测的branch
+            failed_branch_list = json_dict['failed_branches']
             print('failed branch num in the dataset: {}'.format(len(failed_branch_list)))
     except IOError:
         print('failed_branches.json not found.')
@@ -261,8 +262,8 @@ if __name__ == "__main__":
     train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 65, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 360, 120)
 
-    for num_workers in range(0,50,5):  # 遍历worker数
-        kwargs = {'num_workers': num_workers, 'pin_memory': True}
+    for num_workers in range(0,50,5):
+        kwargs = {'num_workers': num_workers, 'pin_memory': False}
         train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, **kwargs)
         start = time.time()
         for idx, (image, type, stenosis) in tqdm(enumerate(train_loader), total=len(train_loader)):
