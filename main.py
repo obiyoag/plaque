@@ -22,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser('main')
     parser.add_argument('--model', default='rcnn', type=str, help="select the model")
     parser.add_argument('--exp_name', default='exp', type=str, help="the name of the experiment")
-    parser.add_argument('--machine', default='server', type=str, help="the machine for training")
+    parser.add_argument('--machine', default='pc', type=str, help="the machine for training")
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
@@ -30,14 +30,17 @@ def parse_args():
     parser.add_argument('--num_samples', default=120, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
-    parser.add_argument('--pred_unit', default=45, type=int, help='the windowing size of prediciton, default=45')
-    parser.add_argument('--train_ratio', default=0.70, type=float, help='the training ratio of all data')
+    parser.add_argument('--train_ratio', default=0.75, type=float, help='the training ratio of all data')
     parser.add_argument('--sample_normal_prob', default=0.3, type=float, help='the prob to sample normal segment in a branch if the branch is normal')
-    parser.add_argument('--val_time', default=100, type=int, help='the validation times in training')
-    parser.add_argument('--sliding_steps', default=9, type=int, help='the num of sliding cudes along a segment (should be odd)')
+    parser.add_argument('--val_freq', default=1.0, type=float, help='the validation frequency')
     parser.add_argument('--fold_idx', default=None, type=int, help="idx of fold for 4 fold validation")
     parser.add_argument('--num_workers', default=0, type=int, help="num of workers in dataloader")
     parser.add_argument('--pin_memory', default=None, help="use pin_memory or not")
+    parser.add_argument('--seg_len', default=17, type=int, help="the length of a segment")
+    parser.add_argument('--window_size', default=5, type=int, help="the sliding window size")
+    parser.add_argument('--sliding_steps', default=None, type=int, help='the num of sliding cudes along a segment (should be odd)')
+    parser.add_argument('--mode', default='2d', type=str, help="mode of the network, 2d or 3d")
+    parser.add_argument('--save_model', default=0, type=int, help="whether to save model")
     
     return parser.parse_args()
 
@@ -65,15 +68,15 @@ def main(args):
     val_dataset = Train_Dataset(val_paths, failed_branch_list, args.sample_normal_prob, args.seg_len, transform=Center_Crop())
     val_loader = DataLoader(val_dataset, batch_size=21, shuffle=False, pin_memory=args.pin_memory, num_workers=args.num_workers)
 
-    model = net_factory(args.model).to(args.device)
+    model = net_factory(args).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     criterion = CrossEntropyLoss()
-    writer = SummaryWriter(os.path.join(args.snapshot_path, 'log'))
+    writer = SummaryWriter(args.snapshot_path)
 
     iter_num = 0
     best_performance = 0
     epoch = args.iteration // len(train_loader) + 1
-    val_stamps = np.linspace(0, epoch, int(epoch * 0.1)).astype(int)
+    val_stamps = np.linspace(0, epoch, int(epoch * args.val_freq)).astype(int)
     iterator = tqdm(range(epoch), unit='epoch')
 
     for epoch_num in iterator:
@@ -88,25 +91,39 @@ def main(args):
 
             if performance > best_performance:
                 best_performance = performance
-                save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch_num, round(best_performance, 4)))
-                save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.exp_name))
-                torch.save(model.state_dict(), save_mode_path)
-                torch.save(model.state_dict(), save_best)
+                best_epoch = epoch
+                if args.save_model:
+                    save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch_num, round(best_performance, 4)))
+                    save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.exp_name))
+                    torch.save(model.state_dict(), save_mode_path)
+                    torch.save(model.state_dict(), save_best)
 
         if iter_num >= args.iteration:
             iterator.close()
             break
 
     writer.close()
-    logging.info("Best performance: {}".format(best_performance))
+    logging.info("Best performance: {}, Best epoch: {}".format(best_performance, best_epoch))
     logging.info("Training Finished!")
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    assert args.sliding_steps % 2 != 0, print("sliding steps should be odd")
-    args.seg_len = args.sliding_steps * 5 + 20
+    assert args.seg_len % 2 != 0, print("segment length should be odd")
+    assert args.window_size % 2 != 0, print("window size should be odd")
+
+    if args.mode == '2d':
+        args.stride = (args.window_size - 1) // 2
+        if args.stride == 0: args.stride = 1
+        args.model = 'rcnn_2d'
+    elif args.mode == '3d':
+        assert args.seg_len % 5 == 0, print("segment length should be a multiple of 5")
+        args.window_size = 25
+        args.stride = 5
+        args.model = 'rcnn'
+
+    args.sliding_steps = (args.seg_len - args.window_size + args.stride) // args.stride
 
     if args.machine == 'server':
         args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
@@ -118,6 +135,8 @@ if __name__ == "__main__":
         args.data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False
         args.num_workers = 15
+        args.arr_columns = 480
+        args.num_samples = 120
     elif args.machine == 'laptop':
         args.data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False

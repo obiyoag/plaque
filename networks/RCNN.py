@@ -35,16 +35,16 @@ class RCNN(nn.Module):
         
 
 class RCNN_2D(nn.Module):
-    def __init__(self, input_size=4608, hidden_size=128, layer_num=2, window_size=25, stride=5):
+    def __init__(self, window_size, stride, input_size=4608, hidden_size=128, layer_num=2):
         # rnn_2d的input_size = 128 * 6 * 6 = 4608
         super(RCNN_2D, self).__init__()
+        self.window_size = window_size
+        self.stride = stride
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.layer_num = layer_num
-        self.window_size = window_size
-        self.stride = stride
 
-        self.cnn_extractor = CNN_Extractor_2D()
+        self.cnn_extractor = CNN_Extractor_2D(in_chn=window_size)
         self.rnn = nn.GRU(input_size, self.hidden_size, self.layer_num, dropout=0.5, bidirectional=True)
         self.type_classifier = nn.Linear(self.hidden_size * 2, 4)
         self.stenosis_classifier = nn.Linear(self.hidden_size * 2, 3)
@@ -66,20 +66,9 @@ class RCNN_2D(nn.Module):
 
 
 if __name__ == "__main__":
-    rcnn = RCNN_2D()
+    rcnn = RCNN_2D(1, 1)
     device = torch.device('cpu')
     
-    train_tensor = torch.randn(8, 1, 70, 50, 50)  # (N, C, D, H, W)
-    type_pred_train, stenosis_pred_train = rcnn(train_tensor, 10, device)
-    print(type_pred_train.shape, stenosis_pred_train.shape)
-
-    val_tensor = torch.randn(8, 1, 45, 50, 50)  # (N, C, D, H, W)
-    type_pred_val, stenosis_pred_val = rcnn(val_tensor, 5, device)
-    print(type_pred_val.shape, stenosis_pred_val.shape)
-
-    train_tensor = torch.randn(8, 1, 70, 50, 50)  # (N, C, D, H, W)
-    input_tensor = train_tensor[:, :, 0: 25, :, :].squeeze(1)
-    print(train_tensor.shape)
-    cnn = CNN_Extractor_2D()
-    output = cnn(input_tensor)
-    print(output.shape)
+    train_tensor = torch.randn(8, 1, 17, 50, 50)  # (N, C, D, H, W)
+    type_logits, stenosis_logits = rcnn(train_tensor, 17, device)
+    print(type_logits.shape, stenosis_logits.shape)

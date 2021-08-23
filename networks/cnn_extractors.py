@@ -37,11 +37,11 @@ class CNN_Block_2D(nn.Module):
         
 
 class CNN_Extractor_2D(nn.Module):
-    def __init__(self):
+    def __init__(self, in_chn):
         super(CNN_Extractor_2D, self).__init__()
-        self.conv_block1 = CNN_Block_2D(in_chn=25, out_chn=32)
-        self.conv_block2 = CNN_Block_2D(in_chn=32, out_chn=64)
-        self.conv_block3 = CNN_Block_2D(in_chn=64, out_chn=128)
+        self.conv_block1 = CNN_Block_2D(in_chn, 32)
+        self.conv_block2 = CNN_Block_2D(32, 64)
+        self.conv_block3 = CNN_Block_2D(64, 128)
     
     def forward(self, x):
         return self.conv_block3(self.conv_block2(self.conv_block1(x)))

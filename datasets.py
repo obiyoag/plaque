@@ -238,7 +238,8 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
+    # data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
+    data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))
@@ -259,11 +260,11 @@ if __name__ == "__main__":
     import time
     from tqdm import tqdm
 
-    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 65, transform=Data_Augmenter())
+    train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 17, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 360, 120)
 
     for num_workers in range(0,50,5):
-        kwargs = {'num_workers': num_workers, 'pin_memory': False}
+        kwargs = {'num_workers': num_workers, 'pin_memory': True}
         train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, **kwargs)
         start = time.time()
         for idx, (image, type, stenosis) in tqdm(enumerate(train_loader), total=len(train_loader)):
