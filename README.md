@@ -1,4 +1,7 @@
-6.15号会议TODO：  
-1. 训练时候的pad方式要改，从中间向两边pad
-2. 斑块长度从中间最严重帧crop或pad到二三十帧
-3. 做一个五折交叉验证，更能看出是不是数据集的问题
+跑哪些实验？  
+1. 3d，rcnn
+2. 3d, tr_net
+3. 2d, tr_net, seg_len=17
+4. 2d, rcnn, seg_len=17
+5. 2d, tr_net, seg_len=25
+6. 2d, rcnn, seg_len=25

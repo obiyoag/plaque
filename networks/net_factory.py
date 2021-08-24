@@ -1,14 +1,16 @@
-from networks.TR_Net import TR_Net
-from networks.RCNN import RCNN, RCNN_2D
+from networks.TR_Net import TR_Net_2D, TR_Net_3D
+from networks.RCNN import RCNN_3D, RCNN_2D
 
 
 def net_factory(args):
-    if args.model == "rcnn":
-        net = RCNN()
+    if args.model == "rcnn_3d":
+        net = RCNN_3D()
     elif args.model == 'rcnn_2d':
         net = RCNN_2D(args.window_size, args.stride)
-    elif args.model == 'tr_net':
-        net = TR_Net()
+    elif args.model == 'tr_net_3d':
+        net = TR_Net_3D()
+    elif args.model == 'tr_net_2d':
+        net = TR_Net_2D(args.window_size, args.stride)
     else:
         net = None
     return net

@@ -3,10 +3,10 @@ import torch.nn as nn
 from networks.cnn_extractors import CNN_Extractor_2D, CNN_Extractor_3D
 
 
-class RCNN(nn.Module):
+class RCNN_3D(nn.Module):
     def __init__(self, input_size=13824, hidden_size=128, layer_num=2, window_size=25, stride=5):
         # rnn的input_size = 128 * 3 * 6 * 6 = 13824
-        super(RCNN, self).__init__()
+        super(RCNN_3D, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.layer_num = layer_num

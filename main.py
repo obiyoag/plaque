@@ -6,16 +6,14 @@ import shutil
 import logging
 import argparse
 import numpy as np
-from tqdm import tqdm
 import torch.optim as optim
 from torch.nn import CrossEntropyLoss
-from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
-from networks.net_factory import net_factory
-from utils import set_seed, Data_Augmenter, Center_Crop, BalancedSampler
-from datasets import split_dataset, Train_Dataset
 from learning import train, evaluate
+from networks.net_factory import net_factory
+from datasets import split_dataset, Train_Dataset
+from utils import set_seed, Data_Augmenter, Center_Crop, BalancedSampler
 
 
 def parse_args():
@@ -26,7 +24,7 @@ def parse_args():
     parser.add_argument('--seed', default=57, type=int, help='random seed')
     parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
     parser.add_argument('--weight_decay', default=1e-3, type=float, help='learning rate')
-    parser.add_argument('--arr_columns', default=360, type=int, help='num of cols in balanced matrix')
+    parser.add_argument('--arr_columns', default=480, type=int, help='num of cols in balanced matrix')
     parser.add_argument('--num_samples', default=120, type=int, help='num of samples per epoch')  # batch_size=(arr_columns/num_samples)*7
     parser.add_argument('--iteration', default=50000, type=int, help='nums of iteration')
     parser.add_argument('--snapshot_path', default='../', type=str, help="save path")
@@ -37,7 +35,7 @@ def parse_args():
     parser.add_argument('--num_workers', default=0, type=int, help="num of workers in dataloader")
     parser.add_argument('--pin_memory', default=None, help="use pin_memory or not")
     parser.add_argument('--seg_len', default=17, type=int, help="the length of a segment")
-    parser.add_argument('--window_size', default=5, type=int, help="the sliding window size")
+    parser.add_argument('--window_size', default=3, type=int, help="the sliding window size")
     parser.add_argument('--sliding_steps', default=None, type=int, help='the num of sliding cudes along a segment (should be odd)')
     parser.add_argument('--mode', default='2d', type=str, help="mode of the network, 2d or 3d")
     parser.add_argument('--save_model', default=0, type=int, help="whether to save model")
@@ -71,38 +69,31 @@ def main(args):
     model = net_factory(args).to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     criterion = CrossEntropyLoss()
-    writer = SummaryWriter(args.snapshot_path)
 
     iter_num = 0
     best_performance = 0
-    epoch = args.iteration // len(train_loader) + 1
-    val_stamps = np.linspace(0, epoch, int(epoch * args.val_freq)).astype(int)
-    iterator = tqdm(range(epoch), unit='epoch')
+    args.epochs = args.iteration // len(train_loader) + 1
+    val_stamps = np.linspace(0, args.epochs, int(args.epochs * args.val_freq)).astype(int)
 
-    for epoch_num in iterator:
-        iterator.set_description(f'Epoch [{epoch_num}/{epoch}]')
+    for epoch in range(args.epochs):
 
-        # train
-        iter_num = train(args, model, train_loader, criterion, optimizer, iter_num, writer)
+        iter_num = train(args, model, train_loader, criterion, optimizer, epoch)
 
-        # validation
-        if epoch_num in val_stamps:
-            performance = evaluate(args, model, val_loader, epoch_num, writer)
+        if epoch in val_stamps:
+            performance = evaluate(args, model, val_loader, epoch)
 
             if performance > best_performance:
                 best_performance = performance
                 best_epoch = epoch
                 if args.save_model:
-                    save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch_num, round(best_performance, 4)))
+                    save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch, round(best_performance, 4)))
                     save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.exp_name))
                     torch.save(model.state_dict(), save_mode_path)
                     torch.save(model.state_dict(), save_best)
 
         if iter_num >= args.iteration:
-            iterator.close()
             break
 
-    writer.close()
     logging.info("Best performance: {}, Best epoch: {}".format(best_performance, best_epoch))
     logging.info("Training Finished!")
 
@@ -116,12 +107,26 @@ if __name__ == "__main__":
     if args.mode == '2d':
         args.stride = (args.window_size - 1) // 2
         if args.stride == 0: args.stride = 1
-        args.model = 'rcnn_2d'
+
+        if args.model == 'rcnn':
+            args.model = 'rcnn_2d'
+        elif args.model == 'tr_net':
+            args.model = 'tr_net_2d'
+        else:
+            raise NotImplementedError
+
     elif args.mode == '3d':
+        args.seg_len = 65
         assert args.seg_len % 5 == 0, print("segment length should be a multiple of 5")
         args.window_size = 25
         args.stride = 5
-        args.model = 'rcnn'
+
+        if args.model == 'rcnn':
+            args.model = 'rcnn_3d'
+        elif args.model == 'tr_net':
+            args.model = 'tr_net_3d'
+        else:
+            raise NotImplementedError
 
     args.sliding_steps = (args.seg_len - args.window_size + args.stride) // args.stride
 
@@ -129,14 +134,10 @@ if __name__ == "__main__":
         args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_memory = False
         args.num_workers = 10
-        args.arr_columns = 480
-        args.num_samples = 120
     elif args.machine == 'pc':
         args.data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False
         args.num_workers = 15
-        args.arr_columns = 480
-        args.num_samples = 120
     elif args.machine == 'laptop':
         args.data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False
@@ -152,7 +153,7 @@ if __name__ == "__main__":
         shutil.rmtree(args.snapshot_path)
     os.makedirs(args.snapshot_path)
     
-    logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%m/%d, %H:%M')
+    logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='%(message)s')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     print('--' * 30)
