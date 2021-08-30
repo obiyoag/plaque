@@ -3,8 +3,8 @@ MODE = "2d 3d"
 MODEL = "rcnn tr_net"
 NODE = "SH-IDC1-10-5-40-220"
 
+source ../../../share/spring/s0.3.3
 cd ..
-source ../../../../../cache/share/spring/s0.3.3
 
 for mode in $MODE
     for model in $MODEL

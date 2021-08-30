@@ -131,7 +131,7 @@ if __name__ == "__main__":
     args.sliding_steps = (args.seg_len - args.window_size + args.stride) // args.stride
 
     if args.machine == 'server':
-        args.data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
+        args.data_path = '/mnt/lustre/gaoyibo.vendor/Datasets/plaque_data_whole_new/'
         args.pin_memory = False
         args.num_workers = 10
     elif args.machine == 'pc':
