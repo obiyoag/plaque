@@ -1,6 +1,6 @@
 FOLD="0 1 2 3"
-MODE = "2d 3d"
-MODEL = "rcnn tr_net"
+MODE="2d 3d"
+MODEL="rcnn tr_net"
 
 source /mnt/lustre/share/platform/env/pat_latest
 cd ..
