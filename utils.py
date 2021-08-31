@@ -6,6 +6,11 @@ from torch.utils.data import Sampler
 from sklearn.metrics import multilabel_confusion_matrix
 
 
+if torch.__version__ != 'parrots':
+    from torch.nn.functional import pad
+else:
+    from torch.nn import ReflectionPad1d
+
 def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -260,3 +265,11 @@ def process_label(label, seg_len):
     label_list = sorted(label_list, key=lambda x: x[1])  # 按照index从小到大排列seg
     label_list = get_bounds(label_list, seg_len)
     return label_list
+
+def reflect_pad(image, left_pad, right_pad):
+    if torch.__version__ != 'parrots':
+        image = pad(image.transpose(2, 0), (left_pad, right_pad), mode="reflect").transpose(2, 0)
+    else:
+        func_pad = ReflectionPad1d((left_pad, right_pad))
+        image = func_pad(image.transpose(2, 0)).transpose(2, 0)
+    return image
