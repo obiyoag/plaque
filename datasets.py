@@ -7,7 +7,7 @@ import numpy as np
 import SimpleITK as sitk
 from torch.utils.data import Dataset, DataLoader
 from utils import set_seed, process_label
-from torch.nn.functional import pad
+from torch.nn import functional as F
 
 
 def split_dataset(case_list, fold_idx, train_ratio):
@@ -238,8 +238,8 @@ class Eval_Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    # data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
-    data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
+    data_path = '/mnt/lustre/gaoyibo.vendor/Datasets/plaque_data_whole_new/'
+    # data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))
@@ -258,7 +258,6 @@ if __name__ == "__main__":
     
     from utils import Data_Augmenter, BalancedSampler
     import time
-    from tqdm import tqdm
 
     train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 17, transform=Data_Augmenter())
     balanced_sampler = BalancedSampler(train_dataset.type_list, train_dataset.stenosis_list, 360, 120)
@@ -267,7 +266,7 @@ if __name__ == "__main__":
         kwargs = {'num_workers': num_workers, 'pin_memory': True}
         train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, **kwargs)
         start = time.time()
-        for idx, (image, type, stenosis) in tqdm(enumerate(train_loader), total=len(train_loader)):
+        for idx, (image, type, stenosis) in enumerate(train_loader):
             pass
         end = time.time()
         print("Finish with:{} second, num_workers={}".format(end-start,num_workers))
