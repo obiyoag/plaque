@@ -57,23 +57,6 @@ def get_one_fold_result(path):
             np.array(no_plaque_acc), np.array(no_plaque_f1),np.array(cal_acc),np.array(cal_f1), np.array(non_cal_acc),np.array(non_cal_f1), \
             np.array(mixed_acc), np.array(mixed_f1)]
 
-    performance_list = []
-    acc_type_list = []
-    f1_type_list = []
-    acc_stenosis_list = []
-    f1_stenosis_list = []
-    with open(path, 'r') as f:
-        lines = f.readlines()
-        for line in lines:
-            cols = line.split()
-            if cols[2] == 'segment-level:':
-                performance_list.append(float(cols[4].strip(',')))
-                acc_type_list.append(float(cols[6].strip(',')))
-                f1_type_list.append(float(cols[8].strip(',')))
-                acc_stenosis_list.append(float(cols[10].strip(',')))
-                f1_stenosis_list.append(float(cols[12].strip(',')))
-    return [np.array(performance_list), np.array(acc_type_list), np.array(f1_type_list), np.array(acc_stenosis_list), np.array(f1_stenosis_list)]
-
 def cross_evaluate_4fold(exp_name):
     result_list = [0 for i in range(len(name_list))]
     folds = [0, 1, 2, 3]
@@ -103,6 +86,7 @@ def get_best_result(result_list):
     print('best_epoch {}'.format(best_epoch))
     for i in range(len(name_list)):
         print(name_list[i] + " " +str(result_list[i][best_epoch]))
+
 
 if __name__ == '__main__':
     result_list = cross_evaluate_4fold()
