@@ -6,7 +6,7 @@ import random
 import numpy as np
 import SimpleITK as sitk
 from torch.utils.data import Dataset, DataLoader
-from utils import set_seed, process_label, reflect_pad
+from utils import set_seed, process_label
 
 
 def split_dataset(case_list, fold_idx, train_ratio):
@@ -141,18 +141,18 @@ class Train_Dataset(Dataset):
 
         if left_len == 0:
             left_pad = min(len(image) - 1, self.seg_len//2)
-            image = reflect_pad(image, left_pad, 0)
+            image = torch.nn.functional.pad(image.transpose(2,0), (left_pad, 0), mode='reflect').transpose(2,0)
             left_len = left_pad
         if right_len == 0:
             right_pad = min(len(image) - 1, self.seg_len//2)
-            image = reflect_pad(image, 0, right_pad)
+            image = torch.nn.functional.pad(image.transpose(2,0), (0, right_pad), mode='reflect').transpose(2,0)
             right_len = right_pad
 
         while(len(image) != self.seg_len):
             left_pad = min(self.seg_len//2 - left_len, right_len)
             right_pad = min(self.seg_len//2 - right_len, left_len)
 
-            image = reflect_pad(image, left_pad, right_pad)
+            image = torch.nn.functional.pad(image.transpose(2,0), (left_pad, right_pad), mode='reflect').transpose(2,0)
             left_len, right_len = left_len + left_pad, right_len + right_pad
 
         assert len(image) == self.seg_len, print('crop or pad failed')
