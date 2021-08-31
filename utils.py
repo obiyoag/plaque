@@ -241,11 +241,12 @@ def get_bounds(label, seg_len):
     
     seg_boundary_list.append(max_pos_list[-1] + seg_len//2)  # 最后一个seg右边界按理想取，长度不够后面再说
 
-    assert len(seg_boundary_list) % 2 == 0, print('Boundary Error!')
+    assert len(seg_boundary_list) / 2 == len(max_pos_list), print('Boundary Error!')
 
     bound_list = []
-    for left_bound, center_pos, right_bounnd in zip(seg_boundary_list[::2], max_pos_list, seg_boundary_list[1::2]):
-        bound_list.append([left_bound, center_pos, right_bounnd])
+    for left_bound, center_pos, right_bound in zip(seg_boundary_list[::2], max_pos_list, seg_boundary_list[1::2]):
+        assert right_bound - left_bound <= seg_len - 1, print('Boundary Error!')
+        bound_list.append([left_bound, center_pos, right_bound])
     
     new_label = []
     for seg, bounds in zip(label, bound_list):

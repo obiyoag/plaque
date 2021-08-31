@@ -45,7 +45,7 @@ def sample_normal(branch_path, seg_len):
 
     center_pos = int(np.random.choice(range(0, img_len), 1))
     left_bound = center_pos - seg_len//2
-    right_bound = center_pos + seg_len//2 + 1
+    right_bound = center_pos + seg_len//2  # 这里不应该加一，保持长度为seg_len
 
     label_list = [[0, 0, [left_bound, center_pos, right_bound]]]
 
@@ -153,6 +153,8 @@ class Train_Dataset(Dataset):
             left_pad = min(left_len, self.seg_len//2 - left_len)
             right_pad = min(right_len, self.seg_len//2 - right_len)
 
+            print(left_pad, right_pad)
+
             image = pad(image.transpose(2, 0), (left_pad, right_pad), mode="reflect").transpose(2, 0)
             left_len, right_len = left_len + left_pad, right_len + right_pad
 
@@ -239,7 +241,8 @@ class Eval_Dataset(Dataset):
 
 if __name__ == "__main__":
     # data_path = '/mnt/lustre/zhazhenzhou.vendor/gaoyibo/Datasets/plaque_data_whole_new/'
-    data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
+    # data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
+    data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
     set_seed(57)
 
     case_list = sorted(os.listdir(data_path))
