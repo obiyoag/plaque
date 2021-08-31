@@ -44,7 +44,7 @@ def sample_normal(branch_path, seg_len):
 
     center_pos = int(np.random.choice(range(0, img_len), 1))
     left_bound = center_pos - seg_len//2
-    right_bound = center_pos + seg_len//2 + 1
+    right_bound = center_pos + seg_len//2
 
     label_list = [[0, 0, [left_bound, center_pos, right_bound]]]
 
@@ -145,12 +145,12 @@ class Train_Dataset(Dataset):
             left_len = left_pad
         if right_len == 0:
             right_pad = min(len(image) - 1, self.seg_len//2)
-            image = reflect_pad(image, right_pad, 0)
+            image = reflect_pad(image, 0, right_pad)
             right_len = right_pad
 
         while(len(image) != self.seg_len):
-            left_pad = min(left_len, self.seg_len//2 - left_len)
-            right_pad = min(right_len, self.seg_len//2 - right_len)
+            left_pad = min(self.seg_len//2 - left_len, right_len)
+            right_pad = min(self.seg_len//2 - right_len, left_len)
 
             image = reflect_pad(image, left_pad, right_pad)
             left_len, right_len = left_len + left_pad, right_len + right_pad
@@ -256,6 +256,7 @@ if __name__ == "__main__":
         print('failed_branches.json not found.')
     
     from utils import Data_Augmenter, BalancedSampler
+    from tqdm import tqdm
     import time
 
     train_dataset = Train_Dataset(train_paths, failed_branch_list, 0.3, 17, transform=Data_Augmenter())
@@ -265,7 +266,7 @@ if __name__ == "__main__":
         kwargs = {'num_workers': num_workers, 'pin_memory': True}
         train_loader = DataLoader(train_dataset, batch_sampler=balanced_sampler, **kwargs)
         start = time.time()
-        for idx, (image, type, stenosis) in enumerate(train_loader):
+        for idx, (image, type, stenosis) in tqdm(enumerate(train_loader), total=len(train_loader)):
             pass
         end = time.time()
         print("Finish with:{} second, num_workers={}".format(end-start,num_workers))
