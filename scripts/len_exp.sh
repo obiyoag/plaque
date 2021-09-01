@@ -3,7 +3,7 @@ PARROTS=false
 MODEL="tr_net"
 FOLD="0 1 2 3"
 
-if PARROTS
+if ${PARROTS}
 then
     source /mnt/lustre/share/platform/env/pat_latest
     PARTITION="pat_uranus"

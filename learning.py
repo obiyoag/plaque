@@ -11,7 +11,7 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
     for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
 
         image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-        type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
+        type_output, stenosis_output = model(image, device=args.device)
 
         type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
         stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -82,7 +82,7 @@ def evaluate(args, model, val_loader, epoch):
 
 
             image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
+            type_output, stenosis_output = model(image, device=args.device)
 
             type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
             stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
