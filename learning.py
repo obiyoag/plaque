@@ -11,7 +11,7 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
     for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
 
         image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-        type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
+        type_output, stenosis_output = model(image, device=args.device)
 
         type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
         stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -62,8 +62,8 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
               'non_cal {17:.2f}/{18:.2f}\t' \
               'mixed {19:.2f}/{20:.2f}'. \
         format(str(epoch + 1).zfill(3), args.epochs, (type_acc.mean() + stenosis_acc.mean()) / 2, type_acc.mean(), type_f1.mean(), \
-            stenosis_acc.mean(), stenosis_f1.mean(), stenosis_acc[0], stenosis_f1[0], stenosis_acc[1], stenosis_f1[1], stenosis_acc[2], \
-            stenosis_f1[2], type_acc[0], type_f1[0], type_acc[1], type_f1[1], type_acc[2], type_f1[2], type_acc[3], type_f1[3])
+               stenosis_acc.mean(), stenosis_f1.mean(), stenosis_acc[0], stenosis_f1[0], stenosis_acc[1], stenosis_f1[1], stenosis_acc[2], \
+               stenosis_f1[2], type_acc[0], type_f1[0], type_acc[1], type_f1[1], type_acc[2], type_f1[2], type_acc[3], type_f1[3])
     
     print('\n')
     logging.info(val_log)
@@ -80,9 +80,8 @@ def evaluate(args, model, val_loader, epoch):
         stenosis_label_list = []
         for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
 
-
             image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            type_output, stenosis_output = model(image, steps=args.sliding_steps, device=args.device)
+            type_output, stenosis_output = model(image, device=args.device)
 
             type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
             stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -95,18 +94,18 @@ def evaluate(args, model, val_loader, epoch):
         performance = (type_acc.mean() + stenosis_acc.mean()) / 2
 
         val_log = 'Valid [{0}/{1}]\tperformance {2:.2f}\t' \
-                'type_acc {3:.2f}\ttype_f1 {4:.2f}\t' \
-                'stenosis_acc {5:.2f}\tstenosis_f1 {6:.2f}\t' \
-                'no_stenosis {7:.2f}/{8:.2f}\t' \
-                'non_sig {9:.2f}/{10:.2f}\t' \
-                'sig {11:.2f}/{12:.2f}\t' \
-                'no_plaque {13:.2f}/{14:.2f}\t' \
-                'cal {15:.2f}/{16:.2f}\t' \
-                'non_cal {17:.2f}/{18:.2f}\t' \
-                'mixed {19:.2f}/{20:.2f}'. \
+                  'type_acc {3:.2f}\ttype_f1 {4:.2f}\t' \
+                  'stenosis_acc {5:.2f}\tstenosis_f1 {6:.2f}\t' \
+                  'no_stenosis {7:.2f}/{8:.2f}\t' \
+                  'non_sig {9:.2f}/{10:.2f}\t' \
+                  'sig {11:.2f}/{12:.2f}\t' \
+                  'no_plaque {13:.2f}/{14:.2f}\t' \
+                  'cal {15:.2f}/{16:.2f}\t' \
+                  'non_cal {17:.2f}/{18:.2f}\t' \
+                  'mixed {19:.2f}/{20:.2f}'. \
             format(str(epoch + 1).zfill(3), args.epochs, performance, type_acc.mean(), type_f1.mean(), stenosis_acc.mean(), \
-                stenosis_f1.mean(), stenosis_acc[0], stenosis_f1[0], stenosis_acc[1], stenosis_f1[1], stenosis_acc[2], \
-                stenosis_f1[2], type_acc[0], type_f1[0], type_acc[1], type_f1[1], type_acc[2], type_f1[2], type_acc[3], type_f1[3])
+                   stenosis_f1.mean(), stenosis_acc[0], stenosis_f1[0], stenosis_acc[1], stenosis_f1[1], stenosis_acc[2], \
+                   stenosis_f1[2], type_acc[0], type_f1[0], type_acc[1], type_f1[1], type_acc[2], type_f1[2], type_acc[3], type_f1[3])
         
         print('\n')
         logging.info(val_log)
