@@ -112,6 +112,8 @@ if __name__ == "__main__":
             args.model = 'rcnn_2d'
         elif args.model == 'tr_net':
             args.model = 'tr_net_2d'
+        elif args.model == 'miccai_tr':
+            raise ValueError('miccai_tr do not support 2d mode.')
         else:
             raise NotImplementedError
 
@@ -125,6 +127,8 @@ if __name__ == "__main__":
             args.model = 'rcnn_3d'
         elif args.model == 'tr_net':
             args.model = 'tr_net_3d'
+        elif args.model == 'miccai_tr':
+            pass
         else:
             raise NotImplementedError
 
