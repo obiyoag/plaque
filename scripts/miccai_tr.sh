@@ -1,7 +1,7 @@
 MODEL="miccai_tr"
 FOLD="0 1 2 3"
 
-source activate pytorch
+source /mnt/lustre/share/spring/r0.3.3
 cd ..
 
 for fold_idx in $FOLD
