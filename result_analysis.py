@@ -32,7 +32,7 @@ def get_one_fold_result(path):
         lines = f.readlines()
         for line in lines:
             cols = line.split()
-            if cols[0] == 'Valid' and int(cols[1].strip('[').split('/')[0]) <= 240:
+            if cols[0] == 'Valid' and int(cols[1].strip('[').split('/')[0]):
                 performance_list.append(float(cols[3]))
                 type_acc_list.append(float(cols[5]))
                 type_f1_list.append(float(cols[7]))
@@ -59,13 +59,7 @@ def get_one_fold_result(path):
 
 def cross_evaluate_4fold(root_path, exp_name):
     result_list = [0 for i in range(len(name_list))]
-    if exp_name == '3d_tr_net':
-        folds = [0, 2, 3]
-    elif exp_name == '2d_tr_net':
-        folds = [0, 1, 3]
-    else:
-        folds = [0, 1, 2, 3]
-
+    folds = [0, 1, 2, 3]
     for fold_idx in folds:
         path = os.path.join(root_path, 'snapshot', exp_name + '_fold' + str(fold_idx), 'log.txt')
         fold_list = get_one_fold_result(path)
@@ -102,8 +96,7 @@ def get_best_result(exp_name_list, total_list):
 
 if __name__ == '__main__':
     root_path = '/Users/gaoyibo/experimental_results/plaque/'
-    # exp_name_list = ['2d_rcnn', '2d_rcnn_len25', '2d_tr_net_len25', '3d_rcnn', '3d_tr_net', '2d_tr_net']
-    exp_name_list = ['2d_tr_net_len25', '2d_rcnn_len25']
+    exp_name_list = ['2d_rcnn', '2d_rcnn_len25', '2d_tr_net_len25', '3d_rcnn', '3d_tr_net', '2d_tr_net', '3d_miccai-tr']
     total_list = []
     for exp_name in exp_name_list:
         result_list = cross_evaluate_4fold(root_path, exp_name)
