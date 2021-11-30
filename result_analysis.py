@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import prettytable as pt
 
 
 name_list = ['performance', 'type_acc', 'type_f1', 'stenosis_acc', 'stenosis_f1', 'no_stenosis_acc', 'no_stenosis_f1', 'non_significant_acc', \
@@ -71,32 +72,60 @@ def cross_evaluate_4fold(root_path, exp_name):
     return result_list
 
 def plot_results(exp_name_list, total_list):
-    name = exp_name_list[0] + '-' + exp_name_list[1]
-    plt.figure(figsize=(15, 3))
+
+    if len(exp_name_list) == 2:
+        name = exp_name_list[0] + '-' + exp_name_list[1]
+        plt.figure(figsize=(15, 3))
+        plt.subplots_adjust(left=0.03, right=0.99, top=0.83, wspace=0.165)
+    else:
+        name = 'plot'
+        plt.figure(figsize=(10, 5))
+        plt.subplots_adjust(wspace=0.3, hspace=0.3)
+
     for i in range(5):
-        ax = plt.subplot(151 + i)
+
+        if len(exp_name_list) == 2:
+            ax = plt.subplot(151 + i)
+        else:
+            ax = plt.subplot(231 + i)
+
         ax.set_title(name_list[i])
         for idx, result_list in enumerate(total_list):
             plt.plot(range(len(result_list[i])), result_list[i], label=exp_name_list[idx])
         plt.legend()
-    plt.subplots_adjust(left=0.03, right=0.99, top=0.83, wspace=0.165)
     plt.suptitle(name)
     plt.savefig('/Users/gaoyibo/Desktop/{}.png'.format(name), dpi=300)
     plt.show()
 
 def get_best_result(exp_name_list, total_list):
-    for idx, result_list in enumerate(total_list):
-        print('--'*30)
-        print(exp_name_list[idx])
+    for id, result_list in enumerate(total_list):
+        for idx in range(len(result_list)):
+            result_list[idx] = list(result_list[idx])
+            for j in range(len(result_list[idx])):
+                result_list[idx][j] = '{:.2f}'.format(result_list[idx][j])
         best_epoch = np.argmax(result_list[0])
+        print('--'*30)
+        print(exp_name_list[id])
         print('best_epoch {}'.format(best_epoch))
-        for i in range(len(name_list)):
-            print("{}: {:.2f}".format(name_list[i], result_list[i][best_epoch]))
+        print('performance {}'.format(result_list[0][best_epoch]))
+        pt.float_format = "2.2"
+        stenosis_table = pt.PrettyTable(['stenosis', 'no_stenosis', 'non_signigicant', 'significant', 'average'])
+        type_table = pt.PrettyTable(['type', 'no_plaque', 'calcified', 'non_calcified', 'mixed', 'average'])
+
+        stenosis_table.add_row(['Acc', result_list[5][best_epoch], result_list[7][best_epoch], result_list[9][best_epoch], result_list[3][best_epoch]])
+        stenosis_table.add_row(['F1', result_list[6][best_epoch], result_list[8][best_epoch], result_list[10][best_epoch], result_list[4][best_epoch]])
+        
+        type_table.add_row(['Acc', result_list[11][best_epoch], result_list[13][best_epoch], result_list[15][best_epoch], result_list[17][best_epoch], result_list[1][best_epoch]])
+        type_table.add_row(['F1', result_list[12][best_epoch], result_list[14][best_epoch], result_list[16][best_epoch], result_list[18][best_epoch], result_list[2][best_epoch]])
+
+        print(stenosis_table)
+        print(type_table)
 
 
 if __name__ == '__main__':
     root_path = '/Users/gaoyibo/experimental_results/plaque/'
     exp_name_list = ['2d_rcnn', '2d_rcnn_len25', '2d_tr_net_len25', '3d_rcnn', '3d_tr_net', '2d_tr_net', '3d_miccai-tr']
+    # exp_name_list = ['2d_tr_net_len25', '2d_rcnn_len25']
     total_list = []
     for exp_name in exp_name_list:
         result_list = cross_evaluate_4fold(root_path, exp_name)
