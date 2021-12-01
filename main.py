@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--window_size', default=3, type=int, help="the sliding window size")
     parser.add_argument('--sliding_steps', default=None, type=int, help='the num of sliding cudes along a segment (should be odd)')
     parser.add_argument('--mode', default='2d', type=str, help="mode of the network, 2d or 3d")
-    parser.add_argument('--save_model', default=0, type=int, help="whether to save model")
+    parser.add_argument('--resume', action='store_true')
     
     return parser.parse_args()
 
@@ -71,26 +71,44 @@ def main(args):
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     criterion = CrossEntropyLoss()
 
+    start_epoch = 0
     iter_num = 0
     best_performance = 0
     args.epochs = args.iteration // len(train_loader) + 1
     val_stamps = np.linspace(0, args.epochs, int(args.epochs * args.val_freq)).astype(int)
 
-    for epoch in range(args.epochs):
+    if args.resume:
+        checkpoint_path = os.path.join(args.snapshot_path, 'checkpoint.pth.tar')
+        print(checkpoint_path)
+        assert os.path.isfile(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path)
+        best_performance = checkpoint['best_performance']
+        start_epoch = checkpoint['epoch']
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        print('Load checkpoint at epoch %d.' % start_epoch)
+
+    for epoch in range(start_epoch, args.epochs):
 
         iter_num = train(args, model, train_loader, criterion, optimizer, epoch)
 
         if epoch in val_stamps:
             performance = evaluate(args, model, val_loader, epoch)
 
-            if performance > best_performance:
-                best_performance = performance
+            is_best = performance > best_performance
+            best_performance = max(best_performance, performance)
+            checkpoint = {
+                'best_performance': best_performance,
+                'epoch': epoch + 1,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+            }
+            checkpoint_path = os.path.join(args.snapshot_path, 'checkpoint.pth.tar')
+            torch.save(checkpoint, checkpoint_path)
+
+            if is_best:
+                shutil.copy(checkpoint_path, os.path.join(args.snapshot_path, 'best_model.pth.tar'))
                 best_epoch = epoch
-                if args.save_model:
-                    save_mode_path = os.path.join(args.snapshot_path, 'epoch_{}_acc_{}.pth'.format(epoch, round(best_performance, 4)))
-                    save_best = os.path.join(args.snapshot_path, '{}_best_model.pth'.format(args.exp_name))
-                    torch.save(model.state_dict(), save_mode_path)
-                    torch.save(model.state_dict(), save_best)
 
         if iter_num >= args.iteration:
             break
@@ -114,7 +132,9 @@ if __name__ == "__main__":
         elif args.model == 'tr_net':
             args.model = 'tr_net_2d'
         elif args.model == 'miccai_tr':
-            raise ValueError('miccai_tr do not support 2d mode.')
+            raise ValueError('miccai_tr does not support 2d mode.')
+        elif args.model == 'vit':
+            pass
         else:
             raise NotImplementedError
 
@@ -130,6 +150,8 @@ if __name__ == "__main__":
             args.model = 'tr_net_3d'
         elif args.model == 'miccai_tr':
             pass
+        elif args.model == 'vit':
+            raise ValueError('vit does not support 3d mode')
         else:
             raise NotImplementedError
 
@@ -138,15 +160,15 @@ if __name__ == "__main__":
     if args.machine == 'server':
         args.data_path = '/mnt/lustre/gaoyibo.vendor/Datasets/plaque_data_whole_new/'
         args.pin_memory = False
-        args.num_workers = 10
+        args.num_workers = 4
     elif args.machine == 'pc':
         args.data_path = '/home/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False
-        args.num_workers = 15
+        args.num_workers = 8
     elif args.machine == 'laptop':
         args.data_path = '/Users/gaoyibo/Datasets/plaque_data_whole_new/'
         args.pin_menory = False
-        args.num_workers = 0
+        args.num_workers = 2
     else:
         raise NotImplementedError
 
@@ -154,11 +176,7 @@ if __name__ == "__main__":
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.snapshot_path = "./snapshot/{}/".format(args.exp_name)
 
-    if os.path.exists(args.snapshot_path):
-        shutil.rmtree(args.snapshot_path)
-    os.makedirs(args.snapshot_path)
-    
-    logging.basicConfig(filename=args.snapshot_path+"/log.txt", level=logging.INFO, format='%(message)s')
+    logging.basicConfig(filename=args.snapshot_path + "/log.txt", level=logging.INFO, format='%(message)s')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     print('--' * 30)

@@ -1,6 +1,7 @@
 from networks.TR_Net import TR_Net_2D, TR_Net_3D
 from networks.RCNN import RCNN_3D, RCNN_2D
 from networks.miccai_tr import transformer_network
+from networks.ViT import ViT
 
 
 def net_factory(args):
@@ -14,6 +15,8 @@ def net_factory(args):
         net = TR_Net_2D(args.window_size, args.stride, args.sliding_steps)
     elif args.model == 'miccai_tr':
         net = transformer_network(args.window_size, args.stride, args.sliding_steps)
+    elif args.model == 'vit':
+        net = ViT(args.seg_len)
     else:
         net = None
     return net

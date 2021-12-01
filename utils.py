@@ -12,6 +12,7 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
+    torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.deterministic = True
 
 def normalize(image):
