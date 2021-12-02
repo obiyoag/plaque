@@ -2,12 +2,14 @@
 import os
 import sys
 import json
+import time
 import torch
 import shutil
 import logging
 import argparse
 import numpy as np
 import torch.optim as optim
+from datetime import timedelta
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 
@@ -90,6 +92,8 @@ def main(args):
 
     for epoch in range(start_epoch, args.epochs):
 
+        start = time.time()
+
         iter_num = train(args, model, train_loader, criterion, optimizer, epoch)
 
         if epoch in val_stamps:
@@ -109,6 +113,11 @@ def main(args):
             if is_best:
                 shutil.copy(checkpoint_path, os.path.join(args.snapshot_path, 'best_model.pth.tar'))
                 best_epoch = epoch
+        
+        time_per_epoch = time.time() - start
+        seconds_left = int(args.epochs - epoch - 1) * time_per_epoch
+        logging.info('Time per epoch: %s, Est. complete in: %s' % (str(timedelta(seconds=time_per_epoch)), str(timedelta(seconds=seconds_left))))
+        logging.info('--' * 60)
 
         if iter_num >= args.iteration:
             break
@@ -175,6 +184,9 @@ if __name__ == "__main__":
     set_seed(args.seed)
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.snapshot_path = "./snapshot/{}/".format(args.exp_name)
+
+    if not os.path.exists(args.snapshot_path):
+        os.makedirs(args.snapshot_path)
 
     logging.basicConfig(filename=args.snapshot_path + "/log.txt", level=logging.INFO, format='%(message)s')
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
