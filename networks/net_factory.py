@@ -2,6 +2,7 @@ from networks.TR_Net import TR_Net_2D, TR_Net_3D
 from networks.RCNN import RCNN_3D, RCNN_2D
 from networks.miccai_tr import transformer_network
 from networks.ViT import ViT
+from networks.mae_models import PretrainViT, PretrainVisionTransformerEncoder
 
 
 def net_factory(args):
@@ -17,6 +18,10 @@ def net_factory(args):
         net = transformer_network(args.window_size, args.stride, args.sliding_steps)
     elif args.model == 'vit':
         net = ViT(args.seg_len)
+    elif args.model == 'mae_pretrain':
+        net = PretrainViT(args.seg_len)
+    elif args.model == 'mae_finetune':
+        net = PretrainVisionTransformerEncoder(args.seg_len, pretrain=False)
     else:
         net = None
     return net

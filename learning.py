@@ -1,6 +1,8 @@
 import torch
 import logging
-from utils import get_metrics
+from utils import get_metrics, AverageMeter
+from einops import rearrange
+
 
 def train(args, model, train_loader, criterion, optimizer, epoch):
     model.train()
@@ -11,7 +13,8 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
     for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
 
         image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-        type_output, stenosis_output = model(image, device=args.device)
+        bool_masked_pos = torch.zeros(image.size(0), args.seg_len).to(args.device).flatten(1).to(torch.bool)
+        type_output, stenosis_output = model(image, bool_masked_pos)
 
         type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
         stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -81,7 +84,8 @@ def evaluate(args, model, val_loader, epoch):
         for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
 
             image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            type_output, stenosis_output = model(image, device=args.device)
+            bool_masked_pos = torch.zeros(image.size(0), args.seg_len).to(args.device).flatten(1).to(torch.bool)
+            type_output, stenosis_output = model(image, bool_masked_pos)
 
             type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
             stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -112,3 +116,31 @@ def evaluate(args, model, val_loader, epoch):
         print('\n')
 
         return performance
+
+
+def pretrain_one_epoch(args, model, train_loader, criterion, optimizer):
+    loss_meter = AverageMeter()
+    model.train()
+    for step, (batch, _, _) in enumerate(train_loader):
+        images, bool_masked_pos = batch
+        images = images.to(args.device).float()
+        bool_masked_pos = bool_masked_pos.to(args.device).flatten(1).to(torch.bool)
+
+        image_encoding = rearrange(images, 'b c d h w -> b d (c h w)')
+        B, _, C = image_encoding.shape
+        labels = image_encoding[bool_masked_pos].reshape(B, -1, C)
+
+        output = model(images, bool_masked_pos)
+        loss = criterion(output, labels)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        loss_meter.update(loss.item(), B)
+
+        if step % 10 or step == len(train_loader) - 1:
+            logging.info('pretrain %05d %e', step, loss_meter.avg)
+    
+    return loss_meter.avg
+
