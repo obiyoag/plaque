@@ -8,7 +8,7 @@ name_list = ['performance', 'type_acc', 'type_f1', 'stenosis_acc', 'stenosis_f1'
              'non_significant_f1', 'significant_acc', 'significant_f1', 'no_plaque_acc', 'no_plaque_f1', 'calcified_acc', 'calcified_f1', \
              'non_calcified_acc', 'non_calcified_f1', 'mixed_acc', 'mixed_f1']
 
-def get_one_fold_result(path):
+def get_one_fold_result(path, epoch):
     performance_list = []
     type_acc_list = []
     type_f1_list = []
@@ -33,7 +33,7 @@ def get_one_fold_result(path):
         lines = f.readlines()
         for line in lines:
             cols = line.split()
-            if cols[0] == 'Valid' and int(cols[1].strip('[').split('/')[0]):
+            if cols[0] == 'Valid' and int(cols[1].strip('[').split('/')[0]) < epoch:
                 performance_list.append(float(cols[3]))
                 type_acc_list.append(float(cols[5]))
                 type_f1_list.append(float(cols[7]))
@@ -58,12 +58,12 @@ def get_one_fold_result(path):
             np.array(no_plaque_acc), np.array(no_plaque_f1),np.array(cal_acc),np.array(cal_f1), np.array(non_cal_acc),np.array(non_cal_f1), \
             np.array(mixed_acc), np.array(mixed_f1)]
 
-def cross_evaluate_4fold(root_path, exp_name):
+def cross_evaluate_4fold(root_path, exp_name, epoch):
     result_list = [0 for i in range(len(name_list))]
     folds = [0, 1, 2, 3]
     for fold_idx in folds:
         path = os.path.join(root_path, 'snapshot', exp_name + '_fold' + str(fold_idx), 'log.txt')
-        fold_list = get_one_fold_result(path)
+        fold_list = get_one_fold_result(path, epoch)
         for idx in range(len(result_list)):
             result_list[idx] += fold_list[idx]
 
@@ -124,11 +124,11 @@ def get_best_result(exp_name_list, total_list):
 
 if __name__ == '__main__':
     root_path = '/Users/gaoyibo/experimental_results/plaque/'
-    exp_name_list = ['2d_rcnn', '2d_rcnn_len25', '2d_tr_net_len25', '3d_rcnn', '3d_tr_net', '2d_tr_net', '3d_miccai-tr']
+    exp_name_list = ['2d_rcnn', '2d_rcnn_len25', '2d_tr_net_len25', '3d_rcnn', '3d_tr_net', '2d_tr_net', '3d_miccai-tr', 'vit_len17']
     # exp_name_list = ['2d_tr_net_len25', '2d_rcnn_len25']
     total_list = []
     for exp_name in exp_name_list:
-        result_list = cross_evaluate_4fold(root_path, exp_name)
+        result_list = cross_evaluate_4fold(root_path, exp_name, epoch=200)
         total_list.append(result_list)
     plot_results(exp_name_list, total_list)
     get_best_result(exp_name_list, total_list)
