@@ -2,9 +2,10 @@ import torch
 import logging
 from utils import get_metrics, AverageMeter
 from einops import rearrange
+from torch.nn.functional import pad
 
 
-def train(args, model, train_loader, criterion, optimizer, epoch):
+def train(args, model, train_loader, criterion, optimizer, epoch, scheduler):
     model.train()
     type_pred_list = []
     type_label_list = []
@@ -12,9 +13,9 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
     stenosis_label_list = []
     for i_batch, (image, plaque_type, stenosis) in enumerate(train_loader):
 
-        image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-        bool_masked_pos = torch.zeros(image.size(0), args.seg_len).to(args.device).flatten(1).to(torch.bool)
-        type_output, stenosis_output = model(image, bool_masked_pos)
+        image, plaque_type, stenosis = image.squeeze(1).to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
+        image = pad(image.transpose(1, 3), (args.stride, args.stride, 0, 0), mode='replicate').transpose(1, 3)
+        type_output, stenosis_output = model(image, None)
 
         type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
         stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -28,14 +29,9 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
         iter_num = i_batch + epoch * len(train_loader)
-
-        if iter_num < args.iteration:
-            lr_ = max(args.lr * (1.0 - iter_num / args.iteration) ** 0.9, 1e-4)
-
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr_
 
         type_loss, stenosis_loss, loss = round(type_loss.item(), 4), round(stenosis_loss.item(), 4), round(loss.item(), 4)
 
@@ -45,12 +41,9 @@ def train(args, model, train_loader, criterion, optimizer, epoch):
                         'type_loss {4:.4f}\t' \
                         'stenosis_loss {5:.4f}\t' \
                         'lr {6:.5f}\t'. \
-                format(str(epoch + 1).zfill(3), str(i_batch).zfill(3), len(train_loader), loss, type_loss, stenosis_loss, lr_)
+                format(str(epoch + 1).zfill(3), str(i_batch).zfill(3), len(train_loader), loss, type_loss, stenosis_loss, optimizer.param_groups[0]['lr'])
             logging.info(batch_log)
 
-        if i_batch == len(train_loader) or iter_num >= args.iteration:
-            break
-    
     type_acc, type_f1 = get_metrics(type_label_list, type_pred_list)
     stenosis_acc, stenosis_f1 = get_metrics(stenosis_label_list, stenosis_pred_list)
 
@@ -83,9 +76,9 @@ def evaluate(args, model, val_loader, epoch):
         stenosis_label_list = []
         for i_batch, (image, plaque_type, stenosis) in enumerate(val_loader):
 
-            image, plaque_type, stenosis = image.to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
-            bool_masked_pos = torch.zeros(image.size(0), args.seg_len).to(args.device).flatten(1).to(torch.bool)
-            type_output, stenosis_output = model(image, bool_masked_pos)
+            image, plaque_type, stenosis = image.squeeze(1).to(args.device).float(), plaque_type.to(args.device), stenosis.to(args.device)
+            image = pad(image.transpose(1, 3), (args.stride, args.stride, 0, 0), mode='replicate').transpose(1, 3)
+            type_output, stenosis_output = model(image, None)
 
             type_pred_list.extend(torch.argmax(torch.softmax(type_output, dim=1), dim=1).tolist())
             stenosis_pred_list.extend(torch.argmax(torch.softmax(stenosis_output, dim=1), dim=1).tolist())
@@ -118,29 +111,31 @@ def evaluate(args, model, val_loader, epoch):
         return performance
 
 
-def pretrain_one_epoch(args, model, train_loader, criterion, optimizer):
+def pretrain_one_epoch(args, model, train_loader, criterion, optimizer, scheduler):
     loss_meter = AverageMeter()
     model.train()
-    for step, (batch, _, _) in enumerate(train_loader):
-        images, bool_masked_pos = batch
-        images = images.to(args.device).float()
-        bool_masked_pos = bool_masked_pos.to(args.device).flatten(1).to(torch.bool)
+    for step, ((images, mask), _, _) in enumerate(train_loader):
 
-        image_encoding = rearrange(images, 'b c d h w -> b d (c h w)')
-        B, _, C = image_encoding.shape
-        labels = image_encoding[bool_masked_pos].reshape(B, -1, C)
+        mask = mask.bool().to(args.device)
+        images = images.squeeze(1).float().to(args.device)
 
-        output = model(images, bool_masked_pos)
+        labels = images[mask]
+
+        images = pad(images.transpose(1, 3), (args.stride, args.stride, 0, 0), mode='replicate').transpose(1, 3)
+
+        output = model(images, mask)
+
+        output = output[mask]
         loss = criterion(output, labels)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
-        loss_meter.update(loss.item(), B)
+        loss_meter.update(loss.item(), images.size(0))
 
         if step % 10 or step == len(train_loader) - 1:
             logging.info('pretrain %05d %e', step, loss_meter.avg)
     
     return loss_meter.avg
-

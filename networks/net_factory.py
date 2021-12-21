@@ -1,27 +1,21 @@
 from networks.TR_Net import TR_Net_2D, TR_Net_3D
 from networks.RCNN import RCNN_3D, RCNN_2D
 from networks.miccai_tr import transformer_network
-from networks.ViT import ViT
-from networks.mae_models import PretrainViT, PretrainVisionTransformerEncoder
 
 
 def net_factory(args):
     if args.model == "rcnn_3d":
-        net = RCNN_3D(args.window_size, args.stride, args.sliding_steps)
+        net = RCNN_3D(args.window_size, args.stride)
     elif args.model == 'rcnn_2d':
-        net = RCNN_2D(args.window_size, args.stride, args.sliding_steps)
+        net = RCNN_2D(args.window_size, args.stride)
     elif args.model == 'tr_net_3d':
-        net = TR_Net_3D(args.window_size, args.stride, args.sliding_steps)
+        net = TR_Net_3D(args.window_size, args.stride)
     elif args.model == 'tr_net_2d':
-        net = TR_Net_2D(args.window_size, args.stride, args.sliding_steps)
+        net = TR_Net_2D(args.window_size, args.stride, args.seg_len, pretrain=False)
+    elif args.model == 'autoencoder':
+        net = TR_Net_2D(args.window_size, args.stride, args.seg_len, pretrain=True, mask_ratio=args.mask_ratio)
     elif args.model == 'miccai_tr':
-        net = transformer_network(args.window_size, args.stride, args.sliding_steps)
-    elif args.model == 'vit':
-        net = ViT(args.seg_len)
-    elif args.model == 'mae_pretrain':
-        net = PretrainViT(args.seg_len)
-    elif args.model == 'mae_finetune':
-        net = PretrainVisionTransformerEncoder(args.seg_len, pretrain=False)
+        net = transformer_network(args.window_size, args.stride)
     else:
         net = None
     return net

@@ -25,7 +25,7 @@ class PretrainVisionTransformerEncoder(nn.Module):
         else:
             self.fc_norm = nn.LayerNorm(dim)
             self.type_classifier = nn.Linear(self.dim, 4)
-            self.stenosis_classifer = nn.Linear(self.dim, 3) 
+            self.stenosis_classifer = nn.Linear(self.dim, 3)
             
         self.apply(self._init_weights)
 
@@ -82,7 +82,7 @@ class PretrainVisionTransformerDecoder(nn.Module):
         return x
 
 class PretrainViT(nn.Module):
-    def __init__(self, window_size, image_size=(50, 50), encoder_dim=1024, encoder_depth=12, encoder_heads=16, 
+    def __init__(self, window_size, image_size=(50, 50), encoder_dim=1024, encoder_depth=12, encoder_heads=16,
                  decoder_dim=512, decoder_depth=8, decoder_heads=8):
         super(PretrainViT, self).__init__()
         self.encoder = PretrainVisionTransformerEncoder(window_size, True, image_size, encoder_dim, encoder_depth, encoder_heads)
@@ -94,7 +94,7 @@ class PretrainViT(nn.Module):
         trunc_normal_(self.mask_token, mean=0., std=0.02, a=-0.02, b=0.02)
     
     def forward(self, x, mask):
-        x_vis, _ = self.encoder(x, mask)
+        x_vis = self.encoder(x, mask)
         x_vis = self.encoder_to_decoder(x_vis)
 
         B, N, C = x_vis.shape
@@ -106,5 +106,6 @@ class PretrainViT(nn.Module):
         pos_emd_mask = expand_pos_embed[mask].reshape(B, -1, C)
         x_full = torch.cat([x_vis + pos_emd_vis, self.mask_token + pos_emd_mask], dim=1)
         x = self.decoder(x_full, pos_emd_mask.shape[1])
+        x = torch.sigmoid(x)
 
         return x

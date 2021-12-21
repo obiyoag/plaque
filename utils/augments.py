@@ -63,16 +63,14 @@ class Center_Crop(object):
 
 
 class MAE_Augmenter(object):
-    def __init__(self, seg_len, mask_ratio, crop_size=50, move=2, prob=0.5):
-        self.crop_size = crop_size
-        self.move = move
-        self.prob = prob
-
-        self.masked_position_generator = RandomMaskingGenerator(seg_len, mask_ratio)
+    def __init__(self, args):
+        self.crop_size = args.image_size
+        self.masked_position_generator = RandomMaskingGenerator(args.seg_len, args.mask_ratio)
+        self.move = args.random_move_size
+        self.prob = args.aug_prob
 
     def __call__(self, image):
         image = normalize(image)
         image = random_rotate(image, self.prob)
         image = random_crop(image, self.crop_size, self.move, self.prob)
-        image = add_gaussian_noise(image, self.prob)
         return image, self.masked_position_generator()

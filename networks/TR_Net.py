@@ -1,7 +1,9 @@
+from einops.layers.torch import Rearrange
 import torch
 from torch import nn, einsum
 from einops import rearrange, repeat
 from networks.cnn_extractors import CNN_Extractor_3D, CNN_Extractor_2D
+from utils import get_sinusoid_encoding_table
 
 
 class PreNorm(nn.Module):
@@ -125,58 +127,74 @@ class TR_Net_3D(nn.Module):
 
 
 class TR_Net_2D(nn.Module):
-    def __init__(self, window_size, stride, steps, input_size=4608, dim=1024, depth=12, pool='cls'):
+    def __init__(self, window_size, stride, seg_len, pretrain, mask_ratio=0.6, image_size=50, input_size=4608, dim=1024, depth=12):
         # rnn_2d的input_size = 128 * 6 * 6 = 4608
         super(TR_Net_2D, self).__init__()
         self.window_size = window_size
         self.stride = stride
+        self.seg_len = seg_len
+        self.pretrain = pretrain
+        self.image_size = image_size
         self.input_size = input_size
         self.dim = dim
         self.depth = depth
-        self.steps = steps
 
         self.cnn_extractor = CNN_Extractor_2D(in_chn=window_size)
         self.to_embedding = nn.Linear(input_size, dim)
 
-        assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
-        self.pos_embedding = nn.Parameter(torch.randn(1, self.steps + 1, dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, self.dim))
+        if pretrain:
+            self.e_pos = get_sinusoid_encoding_table(seg_len - int(mask_ratio * seg_len), dim)
+            self.d_pos = get_sinusoid_encoding_table(seg_len, dim)
+        else:
+            self.e_pos = get_sinusoid_encoding_table(seg_len, dim)
+
         self.dropout = nn.Dropout(0.1)
         self.transformer = Transformer(dim, depth, heads=16, dim_head=64, mlp_dim=2048, dropout=0.1)
-        self.pool = pool
         self.to_latent = nn.Identity()
 
-        self.type_classifier = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 4))
-        self.stenosis_classifier = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 3))
+        if pretrain:
+            self.encoder_to_decoder = nn.Linear(dim, dim, bias=False)
+            self.decoder = nn.Sequential(*[Transformer(dim, depth, heads=16, dim_head=64, mlp_dim=2048, dropout=0.1),
+                                           nn.LayerNorm(dim),
+                                           nn.Linear(dim, image_size**2),
+                                           Rearrange('b n (h w) -> b n h w', h=image_size, w=image_size)])
+        else:
+            self.type_classifier = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 4))
+            self.stenosis_classifier = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 3))
 
-    def forward(self, x, device):
-        # steps为滑块个数。训练时为10，验证测试时为5。
-        batch_size = x.size(0)
-        transformer_input = torch.zeros(batch_size, self.steps, self.input_size).to(device)
-        for i in range(self.steps):
-            input = x[:, :, i * self.stride: i * self.stride + self.window_size, :, :].squeeze(1)
-            transformer_input[:, i, :] = self.cnn_extractor(input).view(batch_size, -1)
+    def forward(self, x, mask):
+        transformer_input = torch.zeros(x.size(0), self.seg_len, self.input_size).to(x.device)
+        for i in range(self.seg_len):
+            input = x[:, i * self.stride: i * self.stride + self.window_size, :, :].squeeze(1)
+            transformer_input[:, i, :] = self.cnn_extractor(input).view(x.size(0), -1)
+
+        if self.pretrain:
+            transformer_input = transformer_input[~mask, :].view(x.size(0), -1, self.input_size)
         transformer_input = self.to_embedding(transformer_input)
-        
-        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=batch_size)
-        transformer_input = torch.cat((cls_tokens, transformer_input), dim=1)
-        transformer_input += self.pos_embedding[:, :(self.steps + 1)]
+        transformer_input += self.e_pos.type_as(x).to(x.device).clone().detach()
         transformer_input = self.dropout(transformer_input)
 
         output = self.transformer(transformer_input)
 
-        output = output.mean(dim=1) if self.pool == 'mean' else output[:, 0]
-
-        output = self.to_latent(output)
-        type_logits = self.type_classifier(output)
-        stenosis_logits = self.stenosis_classifier(output)
-        return type_logits, stenosis_logits
+        if self.pretrain:
+            decoder_input = torch.zeros(x.size(0), self.seg_len, self.dim).to(x.device)
+            for item in ~mask:
+                decoder_input[:, item.nonzero().squeeze(), :] = output
+            decoder_input += self.d_pos.type_as(x).to(x.device).clone().detach()
+            decoder_output = self.decoder(self.encoder_to_decoder(decoder_input))
+            return decoder_output
+        else:
+            output = output.mean(dim=1)
+            output = self.to_latent(output)
+            type_logits = self.type_classifier(output)
+            stenosis_logits = self.stenosis_classifier(output)
+            return type_logits, stenosis_logits
 
 
 if __name__ == "__main__":
-    rcnn = TR_Net_2D(5, 2)
+    tr = TR_Net_2D(3, 1, 15, True)
     device = torch.device('cpu')
     
-    train_tensor = torch.randn(8, 1, 45, 50, 50)  # (N, C, D, H, W)
-    type_pred_train, stenosis_pred_train = rcnn(train_tensor, 5, device)
-    print(type_pred_train.shape, stenosis_pred_train.shape)
+    train_tensor = torch.randn(8, 1, 17, 50, 50)  # (N, C, D, H, W)
+    output = tr(train_tensor)
+    print(output.shape)
